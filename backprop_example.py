@@ -19,8 +19,7 @@ def rand(a, b):
 # Make a matrix (we could use NumPy to speed this up)
 def makeMatrix(I, J, fill=0.0):
     m = []
-    for i in range(I):
-        m.append([fill]*J)
+    m.append([fill]*J)
     return m
 
 # our sigmoid function, tanh is a little nicer than the standard 1/(1+e^-x)
@@ -47,12 +46,18 @@ class NN:
         self.wi = makeMatrix(self.ni, self.nh)
         self.wo = makeMatrix(self.nh, self.no)
         # set them to random vaules
+        #val = -0.1
         for i in range(self.ni):
             for j in range(self.nh):
                 self.wi[i][j] = rand(-0.2, 0.2)
+                #self.wi[i][j] = val
+                #val += 0.1
+        #val = -0.1
         for j in range(self.nh):
             for k in range(self.no):
                 self.wo[j][k] = rand(2.0, 2.0)
+                #self.wo[j][k] = val
+                #val += 0.1
 
         # last change in weights for momentum
         self.ci = makeMatrix(self.ni, self.nh)

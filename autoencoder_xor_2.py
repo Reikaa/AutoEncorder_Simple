@@ -30,20 +30,35 @@ class SimpleAutoEncoder(object):
         if W1 == None:
             W1 = -0.2 + np.random.random_sample((n_hidden, n_inputs))*(0.2 - (-0.2))
             self.W1 = W1
+            '''self.W1 = np.zeros((self.n_h,self.n_i), dtype=np.float32)
+            val = -0.1
+            for j in range(self.n_h):
+                for i in range(self.n_i):
+                    #self.wi[i][j] = rand(-0.2, 0.2)
+                    self.W1[j][i] = val
+                    val += 0.1'''
 
         if W2 == None:
             W2 = -2.0+ np.random.random_sample((self.n_o, n_hidden))*(2.0 - (-2.0))
             self.W2 = W2
+            '''self.W2 = np.zeros((self.n_o,self.n_h), dtype = np.float32)
+            val = -0.1
+            for k in range(self.n_o):
+                for j in range(self.n_h):
+                    #self.wo[j][k] = rand(2.0, 2.0)
+                    self.W2[k][j] = val
+                    val += 0.1'''
 
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
         if b1 == None:
-            b1 = -0.20 + np.random.random_sample((n_hidden,)) * (0.2 - (-0.2))
+            b1 = -0.2 + np.random.random_sample((n_hidden,)) * (0.2 - (-0.2))
             self.b1 = b1
+            #self.b1 = np.array([[0.3],[0.4]])
 
-        if b2 == None:
-            b2 = -2.0 + np.random.random_sample((self.n_o,)) *(2.0 - (-2.0))
-            self.b2 = b2
-
+        #if b2 == None:
+            #b2 = -2.0 + np.random.random_sample((self.n_o,)) *(2.0 - (-2.0))
+            #self.b2 = b2
+            #self.b2 = np.array([0.1])
 
 
     def load_data(self):
@@ -71,12 +86,13 @@ class SimpleAutoEncoder(object):
             sum = 0.0
             for j in range(self.n_h):
                 sum = sum + (self.W2[k][j]*a2[j])
-            z3[k] = sum + self.b2[k]
+            #z3[k] = sum + self.b2[k]
+            z3[k] = sum
             a3[k] = self.sigmoid(z3[k])
 
         return a2, a3
 
-    def back_prop(self, iter=1000, alpha=0.3, w_decay=0.05):
+    def back_prop(self, iter=2000, alpha=0.5, w_decay=0.05):
 
         '''
             x -> W1 -> h -> W2 -> o
@@ -145,9 +161,9 @@ class SimpleAutoEncoder(object):
                         change = delta3[k]*a2[j]
                         self.W2[k][j] = self.W2[k][j] + alpha*change + 0.1*d_W2[k][j]
                         d_W2[k][j] = change
-                    changeB = delta3[k]
-                    self.b2[k] = self.b2[k] + alpha*changeB + 0.1*d_b2[k]
-                    d_b2[k] = changeB
+                    #changeB = delta3[k]
+                    #self.b2[k] = self.b2[k] + alpha*changeB + 0.1*d_b2[k]
+                    #d_b2[k] = changeB
 
 
                 for j in range(self.n_h):

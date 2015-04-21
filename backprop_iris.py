@@ -2,7 +2,7 @@ __author__ = 'Thushan Ganegedara'
 
 import numpy as np
 import math
-from scipy import misc
+import csv
 from numpy import linalg as LA
 from PIL import Image
 
@@ -21,13 +21,12 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=150, n_hidden2=50 , W1=None, W2=None, W3=None, b1=None, b2=None, b3=None):
-        self.X = np.zeros((810, 40), dtype=np.float32)
+    def __init__(self, n_inputs=4, n_hidden=4, n_hidden2=3 , W1=None, W2=None, W3=None, b1=None, b2=None, b3=None):
 
         #define global variables for n_inputs and n_hidden
         self.n_hidden = n_hidden
         self.n_inputs = n_inputs
-        self.n_outputs = n_inputs
+        self.n_outputs = 3
         self.n_hidden2 = n_hidden2
 
         #generate random weights for W
@@ -60,16 +59,24 @@ class SimpleAutoEncoder(object):
 
     def load_data(self):
 
-        dir_name = "Data"
-        for i in range(1, 41):
-            file_name = "\\image_"+str(i)+".jpg"
-            img = misc.imread(dir_name+file_name)
-            imgVec = np.reshape(img, (810, 1))
-            self.X[:, i-1] = imgVec[:, 0]
+        file_name = "Data\\iris.csv"
+        data = np.loadtxt(open(file_name,'rb'),delimiter=",")
 
-        self.X = self.X/255.0
+        self.X = np.transpose(data[:, 0:4])
 
-        return self.X
+        self.Y = np.zeros((3,self.X.shape[1]),dtype=np.float32)
+
+        i = 0
+        for y in data[:, 4]:
+            if y==1:
+                self.Y[0,i] = 1
+            if y==2:
+                self.Y[1,i] = 1
+            if y==3:
+                self.Y[2,i] = 1
+            i += 1
+
+        return self.X, self.Y
 
 
     def forward_pass_for_one_case(self, x):
@@ -102,16 +109,16 @@ class SimpleAutoEncoder(object):
             total_rec_err = 0
 
             #for each column (training case) in X
-            for idx in range(0, np.shape(X)[1]):
-                x = X[:, idx]
+            for idx in range(0, np.shape(self.X)[1]):
+                x = self.X[:, idx]
 
                 #perform forward pass
                 a2, a3, a4 = self.forward_pass_for_one_case(x)
 
-                rec_sqr_err = LA.norm(x - a4)
+                rec_sqr_err = LA.norm(self.Y[:, idx] - a4)
 
                 #error for each node (delta) in output layer
-                delta4 = -(x - a4) * self.dsigmoid(a4)
+                delta4 = -(self.Y[:, idx] - a4) * self.dsigmoid(a4)
 
                 p_deriv_W3 = np.dot(delta4[:, None], np.transpose(a3[:, None]))
                 p_deriv_b3 = delta4
@@ -157,36 +164,21 @@ class SimpleAutoEncoder(object):
                 print ("Total Reconstruction Error: %f" % total_rec_err)
 
 
-
-    def visualize_hidden(self):
-
-        for i in range(self.n_hidden2):
-            #hImg = np.zeros((810,), dtype=np.int32)
-            hImg = self.W3[i,:]/LA.norm(self.W3[i,:])*255
-            img = Image.fromarray(np.reshape(hImg, (9, 10))).convert('LA')
-            img.save('hImg'+str(i)+'.png')
-
     #save reconstructed images
-    def save_reconstructed(self):
+    def test(self):
 
-        print ("Reconstructing the Inputs ...")
-        for i in range(0, 40):
-            #hImg = np.zeros((810,), dtype=np.int32)
-            x = self.X[:, i]*255.0
+        print ("Testing the Inputs ...")
+        for i in range(self.X.shape[1]):
+
+            x = self.X[:, i]
             a2, a3, a4 = self.forward_pass_for_one_case(x)
-            if i > 0:
-                rec_err = LA.norm(a4-prev_a4)
-                print ("Difference for images %i and %i is %f" % (i+1, i, rec_err))
-            rec_vec = a4*255.0
-            rec_img = np.reshape(rec_vec, (27,30))
+            print(self.Y[:,i],'->',a4)
 
-            prev_a4 = a4
-            img = Image.fromarray(rec_img).convert('LA')
-            img.save('recImg'+str(i+1)+'.png')
 
 #this calls the __init__ method automatically
 dA = SimpleAutoEncoder()
 Data = dA.load_data()
 dA.back_prop(Data)
+dA.test()
 #dA.visualize_hidden()
-dA.save_reconstructed()
+#dA.save_reconstructed()
