@@ -87,15 +87,22 @@ class SimpleAutoEncoder(object):
 
     def back_prop(self, X, iter=500, alpha=0.3, M = 0.15):
 
-        for i in range(0, iter):
+                    #gradient descent
+        delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
+        delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
+        delta_W2 = np.zeros((self.n_hidden2, self.n_hidden), dtype=np.float32)
+        delta_b2 = np.zeros((self.n_hidden2, ), dtype=np.float32)
+        delta_W3 = np.zeros((self.n_outputs, self.n_hidden2), dtype=np.float32)
+        delta_b3 = np.zeros((self.n_outputs, ), dtype=np.float32)
 
-            #gradient descent
-            delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
-            delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
-            delta_W2 = np.zeros((self.n_hidden2, self.n_hidden), dtype=np.float32)
-            delta_b2 = np.zeros((self.n_hidden2, ), dtype=np.float32)
-            delta_W3 = np.zeros((self.n_outputs, self.n_hidden2), dtype=np.float32)
-            delta_b3 = np.zeros((self.n_outputs, ), dtype=np.float32)
+        prev_delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
+        prev_delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
+        prev_delta_W2 = np.zeros((self.n_hidden2, self.n_hidden), dtype=np.float32)
+        prev_delta_b2 = np.zeros((self.n_hidden2, ), dtype=np.float32)
+        prev_delta_W3 = np.zeros((self.n_outputs, self.n_hidden2), dtype=np.float32)
+        prev_delta_b3 = np.zeros((self.n_outputs, ), dtype=np.float32)
+
+        for i in range(0, iter):
 
 
 
@@ -148,7 +155,7 @@ class SimpleAutoEncoder(object):
                 delta_b1 = delta_b1 + p_deriv_b1
 
                 self.W1 = self.W1 - alpha*delta_W1 + (M * prev_delta_W1)
-                self.b1 = self.b1 - alpha**delta_b1 + (M * prev_delta_b1)
+                self.b1 = self.b1 - alpha*delta_b1 + (M * prev_delta_b1)
 
                 total_rec_err += rec_sqr_err
 
