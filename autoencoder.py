@@ -174,13 +174,13 @@ class SimpleAutoEncoder(object):
         print ("Reconstructing the Inputs ...")
         for i in range(0, 40):
             #hImg = np.zeros((810,), dtype=np.int32)
-            x = self.X[:, i]*255.0
+            x = self.X[:, i]
             a2, a3, a4 = self.forward_pass_for_one_case(x)
             if i > 0:
-                rec_err = LA.norm(a4-x)*255
+                rec_err = LA.norm(a4-x)*255.0
                 print ("Reconstruction Error for image %i is %f" % (i+1, rec_err))
             rec_vec = a4*255.0
-            rec_img = np.reshape(rec_vec, (27,30))
+            rec_img = np.reshape(rec_vec, (27, 30))
 
             img = Image.fromarray(rec_img).convert('LA')
             img.save('recImg'+str(i+1)+'.png')

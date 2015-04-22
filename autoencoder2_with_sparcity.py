@@ -83,7 +83,7 @@ class SimpleAutoEncoder(object):
 
         return a2, a3, a4
 
-    def back_prop(self, iter=500, alpha=0.3, M = 0.15):
+    def back_prop(self, iter=500, alpha=0.3, M = 0.15, beta = 0.15, rho = 0.05):
 
         for i in range(0, iter):
             #gradient descent
@@ -93,6 +93,9 @@ class SimpleAutoEncoder(object):
             delta_b2 = np.zeros((self.n_hidden2, ), dtype=np.float32)
             delta_W3 = np.zeros((self.n_outputs, self.n_hidden2), dtype=np.float32)
             delta_b3 = np.zeros((self.n_outputs, ), dtype=np.float32)
+
+            rho_a2 = np.ones((self.n_hidden, ), dtype=np.float32)*10000
+            rho_a3 = np.ones((self.n_hidden2, ), dtype=np.float32)*10000
 
             total_rec_err = 0.0
             #for each column (training case) in X
@@ -110,8 +113,10 @@ class SimpleAutoEncoder(object):
                 dsig4 = self.dsigmoid(a4)
                 #error for each node (delta) in output layer
                 delta4 = -(x - a4) * self.dsigmoid(a4)
-                delta3 = np.dot(np.transpose(self.W3), delta4) * self.dsigmoid(a3)
-                delta2 = np.dot(np.transpose(self.W2), delta3) * self.dsigmoid(a2)
+                delta3 = np.dot(np.transpose(self.W3), delta4) * self.dsigmoid(a3) \
+                         + beta * ((-rho/rho_a3)+((1-rho)/(1-rho_a3)))
+                delta2 = np.dot(np.transpose(self.W2), delta3) * self.dsigmoid(a2) \
+                         + beta * ((-rho/rho_a2)+((1-rho)/(1-rho_a2)))
 
                 p_deriv_W3 = np.dot(delta4[:, None], np.transpose(a3[:, None]))
                 p_deriv_b3 = delta4
@@ -131,7 +136,17 @@ class SimpleAutoEncoder(object):
                 delta_W1 = delta_W1 + p_deriv_W1
                 delta_b1 = delta_b1 + p_deriv_b1
 
+                if i == 0:
+                    rho_a2 = a2
+                    rho_a3 = a3
+                else:
+                    rho_a2 = rho_a2 + a2
+                    rho_a3 = rho_a3 + a3
+
                 total_rec_err += rec_sqr_err
+
+            rho_a2 = rho_a2/(1.0*self.X.shape[1])
+            rho_a3 = rho_a3/(1.0*self.X.shape[1])
 
             #having 1/m instead of 1.0/m seems to be messing up the reconstruction
             self.W3 = self.W3 - alpha*(((1.0/self.X.shape[1])*delta_W3) + (M * self.W3))
