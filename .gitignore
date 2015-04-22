@@ -1,0 +1,6 @@
+*.log
+*.png
+*.jpg
+.idea/
+Data/
+Output/
