@@ -21,7 +21,7 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=150, n_hidden2=50 , W1=None, W2=None, W3=None, b1=None, b2=None, b3=None):
+    def __init__(self, n_inputs=810, n_hidden=150, n_hidden2=75 , W1=None, W2=None, W3=None, b1=None, b2=None, b3=None):
         self.X = np.zeros((810, 40), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
@@ -36,11 +36,11 @@ class SimpleAutoEncoder(object):
             self.W1 = W1
 
         if W2 == None:
-            W2 = -1.0 + np.random.random_sample((n_hidden2, n_hidden))*2.0
+            W2 = -0.4 + np.random.random_sample((n_hidden2, n_hidden))*0.8
             self.W2 = W2
 
         if W3 == None:
-            W3 = -2.0 + np.random.random_sample((self.n_outputs, n_hidden2))*4.0
+            W3 = -0.3 + np.random.random_sample((self.n_outputs, n_hidden2))*0.6
             self.W3 = W3
 
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
@@ -49,11 +49,11 @@ class SimpleAutoEncoder(object):
             self.b1 = b1
 
         if b2 == None:
-            b2 = -1.0 + np.random.random_sample((self.n_hidden2,)) * 2.0
+            b2 = -0.4 + np.random.random_sample((self.n_hidden2,)) * 0.8
             self.b2 = b2
 
         if b3 == None:
-            b3 = -2.0 + np.random.random_sample((self.n_outputs,)) * 4.0
+            b3 = -0.3 + np.random.random_sample((self.n_outputs,)) * 0.6
             self.b3 = b3
 
 
@@ -62,14 +62,12 @@ class SimpleAutoEncoder(object):
 
         dir_name = "Data"
         for i in range(1, 41):
-            file_name = "\\image_"+str(i)+".jpg"
+            file_name = "\\image_"+str(i)+".png"
             img = misc.imread(dir_name+file_name)
             imgVec = np.reshape(img, (810, 1))
             self.X[:, i-1] = imgVec[:, 0]
 
         self.X = self.X/255.0
-
-        return self.X
 
 
     def forward_pass_for_one_case(self, x):
@@ -85,32 +83,28 @@ class SimpleAutoEncoder(object):
 
         return a2, a3, a4
 
-    def back_prop(self, X, iter=750, alpha=0.3, M = 0.15):
-
-        #gradient descent
-        delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
-        delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
-        delta_W2 = np.zeros((self.n_hidden2, self.n_hidden), dtype=np.float32)
-        delta_b2 = np.zeros((self.n_hidden2, ), dtype=np.float32)
-        delta_W3 = np.zeros((self.n_outputs, self.n_hidden2), dtype=np.float32)
-        delta_b3 = np.zeros((self.n_outputs, ), dtype=np.float32)
-
-        prev_delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
-        prev_delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
-        prev_delta_W2 = np.zeros((self.n_hidden2, self.n_hidden), dtype=np.float32)
-        prev_delta_b2 = np.zeros((self.n_hidden2, ), dtype=np.float32)
-        prev_delta_W3 = np.zeros((self.n_outputs, self.n_hidden2), dtype=np.float32)
-        prev_delta_b3 = np.zeros((self.n_outputs, ), dtype=np.float32)
+    def back_prop(self, iter=250, alpha=0.3, M = 0.15):
 
         for i in range(0, iter):
+            #gradient descent
+            delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
+            delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
+            delta_W2 = np.zeros((self.n_hidden2, self.n_hidden), dtype=np.float32)
+            delta_b2 = np.zeros((self.n_hidden2, ), dtype=np.float32)
+            delta_W3 = np.zeros((self.n_outputs, self.n_hidden2), dtype=np.float32)
+            delta_b3 = np.zeros((self.n_outputs, ), dtype=np.float32)
 
-
-
+            prev_delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
+            prev_delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
+            prev_delta_W2 = np.zeros((self.n_hidden2, self.n_hidden), dtype=np.float32)
+            prev_delta_b2 = np.zeros((self.n_hidden2, ), dtype=np.float32)
+            prev_delta_W3 = np.zeros((self.n_outputs, self.n_hidden2), dtype=np.float32)
+            prev_delta_b3 = np.zeros((self.n_outputs, ), dtype=np.float32)
             total_rec_err = 0
 
             #for each column (training case) in X
-            for idx in range(0, np.shape(X)[1]):
-                x = X[:, idx]
+            for idx in range(0, np.shape(self.X)[1]):
+                x = self.X[:, idx]
 
                 #perform forward pass
                 a2, a3, a4 = self.forward_pass_for_one_case(x)
@@ -119,6 +113,8 @@ class SimpleAutoEncoder(object):
 
                 #error for each node (delta) in output layer
                 delta4 = -(x - a4) * self.dsigmoid(a4)
+                delta3 = np.dot(np.transpose(self.W3), delta4) * self.dsigmoid(a3)
+                delta2 = np.dot(np.transpose(self.W2), delta3) * self.dsigmoid(a2)
 
                 p_deriv_W3 = np.dot(delta4[:, None], np.transpose(a3[:, None]))
                 p_deriv_b3 = delta4
@@ -127,12 +123,10 @@ class SimpleAutoEncoder(object):
                 delta_b3 = p_deriv_b3
 
                 self.W3 = self.W3 - alpha*delta_W3+(M * prev_delta_W3)
-                self.b3 = self.b3 - alpha*delta_b3 + (M * prev_delta_b3)
+                self.b3 = self.b3 - alpha*delta_b3
 
                 prev_delta_W3 = delta_W3
                 prev_delta_b3 = delta_b3
-
-                delta3 = np.dot(np.transpose(self.W3), delta4) * self.dsigmoid(a3)
 
                 p_deriv_W2 = np.dot(delta3[:, None], np.transpose(a2[:, None]))
                 p_deriv_b2 = delta3
@@ -141,22 +135,20 @@ class SimpleAutoEncoder(object):
                 delta_b2 = p_deriv_b2
 
                 self.W2 = self.W2 - alpha*delta_W2 + (M * prev_delta_W2)
-                self.b2 = self.b2 - alpha*delta_b2 + (M * prev_delta_b2)
+                self.b2 = self.b2 - alpha*delta_b2
 
                 prev_delta_W2 = delta_W2
                 prev_delta_b2 = delta_b2
 
-                delta2 = np.dot(np.transpose(self.W2), delta3) * self.dsigmoid(a2)
 
                 p_deriv_W1 = np.dot(delta2[:, None], np.transpose(x[:, None]))
                 p_deriv_b1 = delta2
-
 
                 delta_W1 = p_deriv_W1
                 delta_b1 = p_deriv_b1
 
                 self.W1 = self.W1 - alpha*delta_W1 + (M * prev_delta_W1)
-                self.b1 = self.b1 - alpha*delta_b1 + (M * prev_delta_b1)
+                self.b1 = self.b1 - alpha*delta_b1
 
                 prev_delta_W1 = delta_W1
                 prev_delta_b1 = delta_b1
@@ -166,7 +158,6 @@ class SimpleAutoEncoder(object):
             if i == iter-1:
                 print ("Number of iterations: %i" % iter)
                 print ("Total Reconstruction Error: %f" % total_rec_err)
-
 
 
     def visualize_hidden(self):
@@ -186,18 +177,17 @@ class SimpleAutoEncoder(object):
             x = self.X[:, i]*255.0
             a2, a3, a4 = self.forward_pass_for_one_case(x)
             if i > 0:
-                rec_err = LA.norm(a4-prev_a4)*255
-                print ("Difference for images %i and %i is %f" % (i+1, i, rec_err))
+                rec_err = LA.norm(a4-x)*255
+                print ("Reconstruction Error for image %i is %f" % (i+1, rec_err))
             rec_vec = a4*255.0
             rec_img = np.reshape(rec_vec, (27,30))
 
-            prev_a4 = a4
             img = Image.fromarray(rec_img).convert('LA')
             img.save('recImg'+str(i+1)+'.png')
 
 #this calls the __init__ method automatically
 dA = SimpleAutoEncoder()
-Data = dA.load_data()
-dA.back_prop(Data)
+dA.load_data()
+dA.back_prop()
 #dA.visualize_hidden()
 dA.save_reconstructed()
