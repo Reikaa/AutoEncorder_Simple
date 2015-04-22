@@ -11,17 +11,17 @@ class SimpleAutoEncoder(object):
 
     def sigmoid(self, x):
         return 1.0 / (1.0 + np.exp(-x))
-        #return math.tanh(x)
+        #return (np.exp(x) - np.exp(-x))*1.0/(np.exp(x) + np.exp(-x))
 
     def dsigmoid(self, y):
         return y * (1.0-y)
-        #return 1.0-y**2
+        #return 1.0 - y**2
 
     #the value specified in the argument for each variable is the default value
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=150, n_hidden2=75 , W1=None, W2=None, W3=None, b1=None, b2=None, b3=None):
+    def __init__(self, n_inputs=810, n_hidden=180, n_hidden2=90, W1=None, W2=None, W3=None, b1=None, b2=None, b3=None):
         self.X = np.zeros((810, 40), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
@@ -32,20 +32,20 @@ class SimpleAutoEncoder(object):
 
         #generate random weights for W
         if W1 == None:
-            W1 = -0.2 + np.random.random_sample((n_hidden, n_inputs))*0.4
+            W1 = -0.1 + np.random.random_sample((self.n_hidden, self.n_inputs))*0.2
             self.W1 = W1
 
         if W2 == None:
-            W2 = -0.4 + np.random.random_sample((n_hidden2, n_hidden))*0.8
+            W2 = -0.4 + np.random.random_sample((self.n_hidden2, self.n_hidden))*0.8
             self.W2 = W2
 
         if W3 == None:
-            W3 = -0.3 + np.random.random_sample((self.n_outputs, n_hidden2))*0.6
+            W3 = -0.3 + np.random.random_sample((self.n_outputs, self.n_hidden2))*0.6
             self.W3 = W3
 
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
         if b1 == None:
-            b1 = -0.2 + np.random.random_sample((n_hidden,)) * 0.4
+            b1 = -0.1 + np.random.random_sample((self.n_hidden,)) * 0.2
             self.b1 = b1
 
         if b2 == None:
@@ -62,7 +62,7 @@ class SimpleAutoEncoder(object):
 
         dir_name = "Data"
         for i in range(1, 41):
-            file_name = "\\image_"+str(i)+".png"
+            file_name = "\\image_"+str(i)+".jpg"
             img = misc.imread(dir_name+file_name)
             imgVec = np.reshape(img, (810, 1))
             self.X[:, i-1] = imgVec[:, 0]
@@ -83,7 +83,7 @@ class SimpleAutoEncoder(object):
 
         return a2, a3, a4
 
-    def back_prop(self, iter=250, alpha=0.3, M = 0.15):
+    def back_prop(self, iter=250, alpha=0.4, M = 0.25):
 
         for i in range(0, iter):
             #gradient descent
@@ -162,11 +162,17 @@ class SimpleAutoEncoder(object):
 
     def visualize_hidden(self):
 
-        for i in range(self.n_hidden2):
+        for i in range(self.n_hidden):
             #hImg = np.zeros((810,), dtype=np.int32)
-            hImg = self.W3[i,:]/LA.norm(self.W3[i,:])*255
-            img = Image.fromarray(np.reshape(hImg, (9, 10))).convert('LA')
-            img.save('hImg'+str(i)+'.png')
+            hImg = self.W1[i,:]/LA.norm(self.W1[i,:])*1500.0
+            img = Image.fromarray(np.reshape(hImg, (27, 30))).convert('LA')
+            img.save('hImg_'+str(i)+'.png')
+
+        for i in range(self.n_hidden2):
+            hImg2 = self.W2[i,:]/LA.norm(self.W2[i,:])*1500.0
+            img2 = Image.fromarray(np.reshape(hImg2, (18, 20))).convert('LA')
+            img2.save('hImg2_'+str(i)+'.png')
+
 
     #save reconstructed images
     def save_reconstructed(self):
@@ -179,7 +185,7 @@ class SimpleAutoEncoder(object):
             if i > 0:
                 rec_err = LA.norm(a4-x)*255.0
                 print ("Reconstruction Error for image %i is %f" % (i+1, rec_err))
-            rec_vec = a4*255.0
+            rec_vec = a4 * 255.0
             rec_img = np.reshape(rec_vec, (27, 30))
 
             img = Image.fromarray(rec_img).convert('LA')
