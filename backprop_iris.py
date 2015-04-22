@@ -81,13 +81,17 @@ class SimpleAutoEncoder(object):
 
     def back_prop(self, iter=100, alpha=0.3, M = 0.15):
 
-        for i in range(0, iter):
+        #gradient descent
+        delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
+        delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
+        delta_W2 = np.zeros((self.n_outputs, self.n_hidden), dtype=np.float32)
+        delta_b2 = np.zeros((self.n_outputs, ), dtype=np.float32)
+        prev_delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
+        prev_delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
+        prev_delta_W2 = np.zeros((self.n_outputs, self.n_hidden), dtype=np.float32)
+        prev_delta_b2 = np.zeros((self.n_outputs, ), dtype=np.float32)
 
-            #gradient descent
-            delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
-            delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
-            delta_W2 = np.zeros((self.n_outputs, self.n_hidden), dtype=np.float32)
-            delta_b2 = np.zeros((self.n_outputs, ), dtype=np.float32)
+        for i in range(0, iter):
 
             total_rec_err = 0
 
@@ -107,26 +111,28 @@ class SimpleAutoEncoder(object):
                 p_deriv_W2 = np.dot(delta3[:, None], np.transpose(a2[:, None]))
                 p_deriv_b2 = delta3
 
-                prev_delta_W2 = delta_W2
-                prev_delta_b2 = delta_b2
-                delta_W2 = delta_W2 + p_deriv_W2
-                delta_b2 = delta_b2 + p_deriv_b2
+                delta_W2 = p_deriv_W2
+                delta_b2 = p_deriv_b2
 
                 self.W2 = self.W2 - (alpha * delta_W2) + (M * prev_delta_W2)
                 self.b2 = self.b2 - (alpha * delta_b2) + (M * prev_delta_b2)
+
+                prev_delta_W2 = delta_W2
+                prev_delta_b2 = delta_b2
 
                 delta2 = np.dot(np.transpose(self.W2), delta3) * self.dsigmoid(a2)
 
                 p_deriv_W1 = np.dot(delta2[:, None], np.transpose(x[:, None]))
                 p_deriv_b1 = delta2
 
-                prev_delta_W1 = delta_W1
-                prev_delta_b1 = delta_b1
-                delta_W1 = delta_W1 + p_deriv_W1
-                delta_b1 = delta_b1 + p_deriv_b1
+                delta_W1 = p_deriv_W1
+                delta_b1 = p_deriv_b1
 
                 self.W1 = self.W1 - (alpha*delta_W1) + (M * prev_delta_W1)
                 self.b1 = self.b1 - (alpha*delta_b1) + (M * prev_delta_b1)
+
+                prev_delta_W1 = delta_W1
+                prev_delta_b1 = delta_b1
 
                 total_rec_err += rec_sqr_err
 
@@ -139,12 +145,14 @@ class SimpleAutoEncoder(object):
     def test(self):
 
         print ("Testing the Inputs ...")
+        total_sqr = 0.0
         for i in range(self.X.shape[1]):
-
             x = self.X[:, i]
             a2, a3 = self.forward_pass_for_one_case(x)
-            print(self.Y[:,i],'->',a3)
-
+            sqr_err = LA.norm(self.Y[:, i] - a3)
+            print(self.Y[:, i], '->', a3, ' : ', sqr_err)
+            total_sqr += sqr_err
+        print ("Total Testing Error: %f" % total_sqr)
 
 #this calls the __init__ method automatically
 dA = SimpleAutoEncoder()

@@ -45,7 +45,7 @@ class SimpleAutoEncoder(object):
 
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
         if b1 == None:
-            b1 = -0.05 + np.random.random_sample((n_hidden,)) * 0.1
+            b1 = -0.2 + np.random.random_sample((n_hidden,)) * 0.4
             self.b1 = b1
 
         if b2 == None:
@@ -85,9 +85,9 @@ class SimpleAutoEncoder(object):
 
         return a2, a3, a4
 
-    def back_prop(self, X, iter=500, alpha=0.3, M = 0.15):
+    def back_prop(self, X, iter=750, alpha=0.3, M = 0.15):
 
-                    #gradient descent
+        #gradient descent
         delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
         delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
         delta_W2 = np.zeros((self.n_hidden2, self.n_hidden), dtype=np.float32)
@@ -123,39 +123,43 @@ class SimpleAutoEncoder(object):
                 p_deriv_W3 = np.dot(delta4[:, None], np.transpose(a3[:, None]))
                 p_deriv_b3 = delta4
 
-                prev_delta_W3 = delta_W3
-                prev_delta_b3 = delta_b3
-                delta_W3 = delta_W3 + p_deriv_W3
-                delta_b3 = delta_b3 + p_deriv_b3
+                delta_W3 = p_deriv_W3
+                delta_b3 = p_deriv_b3
 
                 self.W3 = self.W3 - alpha*delta_W3+(M * prev_delta_W3)
                 self.b3 = self.b3 - alpha*delta_b3 + (M * prev_delta_b3)
+
+                prev_delta_W3 = delta_W3
+                prev_delta_b3 = delta_b3
 
                 delta3 = np.dot(np.transpose(self.W3), delta4) * self.dsigmoid(a3)
 
                 p_deriv_W2 = np.dot(delta3[:, None], np.transpose(a2[:, None]))
                 p_deriv_b2 = delta3
 
-                prev_delta_W2 = delta_W2
-                prev_delta_b2 = delta_b2
-                delta_W2 = delta_W2 + p_deriv_W2
-                delta_b2 = delta_b2 + p_deriv_b2
+                delta_W2 = p_deriv_W2
+                delta_b2 = p_deriv_b2
 
                 self.W2 = self.W2 - alpha*delta_W2 + (M * prev_delta_W2)
                 self.b2 = self.b2 - alpha*delta_b2 + (M * prev_delta_b2)
+
+                prev_delta_W2 = delta_W2
+                prev_delta_b2 = delta_b2
 
                 delta2 = np.dot(np.transpose(self.W2), delta3) * self.dsigmoid(a2)
 
                 p_deriv_W1 = np.dot(delta2[:, None], np.transpose(x[:, None]))
                 p_deriv_b1 = delta2
 
-                prev_delta_W1 = delta_W1
-                prev_delta_b1 = delta_b1
-                delta_W1 = delta_W1 + p_deriv_W1
-                delta_b1 = delta_b1 + p_deriv_b1
+
+                delta_W1 = p_deriv_W1
+                delta_b1 = p_deriv_b1
 
                 self.W1 = self.W1 - alpha*delta_W1 + (M * prev_delta_W1)
                 self.b1 = self.b1 - alpha*delta_b1 + (M * prev_delta_b1)
+
+                prev_delta_W1 = delta_W1
+                prev_delta_b1 = delta_b1
 
                 total_rec_err += rec_sqr_err
 
@@ -182,7 +186,7 @@ class SimpleAutoEncoder(object):
             x = self.X[:, i]*255.0
             a2, a3, a4 = self.forward_pass_for_one_case(x)
             if i > 0:
-                rec_err = LA.norm(a4-prev_a4)
+                rec_err = LA.norm(a4-prev_a4)*255
                 print ("Difference for images %i and %i is %f" % (i+1, i, rec_err))
             rec_vec = a4*255.0
             rec_img = np.reshape(rec_vec, (27,30))
