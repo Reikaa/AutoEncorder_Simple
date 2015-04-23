@@ -62,7 +62,7 @@ class SimpleAutoEncoder(object):
 
         dir_name = "Data"
         for i in range(1, 41):
-            file_name = "\\image_"+str(i)+".png"
+            file_name = "\\image_"+str(i)+".jpg"
             img = misc.imread(dir_name+file_name)
             imgVec = np.reshape(img, (810, 1))
             self.X[:, i-1] = imgVec[:, 0]

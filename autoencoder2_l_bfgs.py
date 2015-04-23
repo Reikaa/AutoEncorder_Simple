@@ -2,6 +2,7 @@ __author__ = 'Thushan Ganegedara'
 
 import numpy as np
 import math
+from scipy import optimize
 from scipy import misc
 from numpy import linalg as LA
 from PIL import Image
@@ -21,7 +22,7 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=90, W1=None, W2=None, b1=None, b2=None):
+    def __init__(self, n_inputs=810, n_hidden=40, W1=None, W2=None, b1=None, b2=None):
         self.X = np.zeros((810, 40), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
@@ -66,74 +67,84 @@ class SimpleAutoEncoder(object):
         self.X = self.X/255.0
 
 
-    def forward_pass_for_one_case(self, x):
+    def forward_pass_for_one_case(self, x, W1,b1,W2,b2):
 
-        z2 = np.dot(self.W1, x) + self.b1
+        z2 = np.dot(W1, x) + b1
         a2 = self.sigmoid(z2)
 
-        z3 = np.dot(self.W2, a2) + self.b2
+        z3 = np.dot(W2, a2) + b2
         a3 = self.sigmoid(z3)
 
         return a2, a3
 
+    def cost(self, theta):
+        W1,b1,W2,b2 = self.unpackTheta(theta)
+        tot_sqr_err = 0.0
+        size_data = self.X.shape[1]
+        for idx in range(size_data):
+            x = self.X[:,idx]
+            a2, a3 = self.forward_pass_for_one_case(x,W1,b1,W2,b2)
+            sqr_err = 0.5 * LA.norm(a3-x)
+            tot_sqr_err += sqr_err
+
+        tot_sqr_err = tot_sqr_err/size_data
+
+        return tot_sqr_err
+
+    def packTheta(self, W1, b1, W2, b2):
+        theta_p1 = np.concatenate((np.reshape(W1, (self.n_hidden*self.n_inputs,)), b1))
+        theta_p2 = np.concatenate((np.reshape(W2, (self.n_outputs*self.n_hidden,)), b2))
+        theta = np.concatenate((theta_p1,theta_p2))
+        return theta
+
+    def unpackTheta(self,theta):
+        sIdx = 0
+        tmp = theta[sIdx:self.n_hidden*self.n_hidden-1]
+        W1 = np.reshape(theta[sIdx:self.n_inputs*self.n_hidden], (self.n_hidden, self.n_inputs))
+        sIdx = self.n_hidden*self.n_inputs
+        b1 = np.reshape(theta[sIdx:sIdx+self.n_hidden],(self.n_hidden,))
+        sIdx = sIdx + self.n_hidden
+        W2 = np.reshape(theta[sIdx:sIdx + self.n_outputs*self.n_hidden],(self.n_outputs,self.n_hidden))
+        sIdx = sIdx + self.n_outputs*self.n_hidden
+        b2 = np.reshape(theta[sIdx:],(self.n_outputs,))
+
+        return W1,b1,W2,b2
+
+    def cost_prime(self,theta):
+
+        W1,b1,W2,b2 = self.unpackTheta(theta)
+
+        d_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
+        d_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
+        d_W2 = np.zeros((self.n_outputs, self.n_hidden), dtype=np.float32)
+        d_b2 = np.zeros((self.n_outputs, ), dtype=np.float32)
+
+        size_data = self.X.shape[1]
+        for idx in range(size_data):
+            x = self.X[:,idx]
+            a2, a3 = self.forward_pass_for_one_case(x,W1,b1,W2,b2)
+
+            delta3 = -(x - a3) * self.dsigmoid(a3)
+            delta2 = np.dot(np.transpose(W2), delta3) * self.dsigmoid(a2)
+
+            d_W2 = d_W2 + np.dot(delta3[:, None], np.transpose(a2[:, None]))
+            d_b2 = d_b2 + delta3
+
+            d_W1 = d_W1 + np.dot(delta2[:, None], np.transpose(x[:, None]))
+            d_b1 = d_b1 + delta2
+
+        d_W2 = (1.0/size_data)*d_W2
+        d_b2 = (1.0/size_data)*d_b2
+        d_W1 = (1.0/size_data)*d_W1
+        d_b1 = (1.0/size_data)*d_b1
+
+        return self.packTheta(d_W1, d_b1, d_W2, d_b2)
+
     def back_prop(self, iter=500, alpha=0.75, M = 0.15):
+        args = self.packTheta(self.W1,self.b1,self.W2,self.b2)
+        res = optimize.minimize(self.cost, x0=args, jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':1000,'disp':True})
 
-        for i in range(0, iter):
-            #gradient descent
-            delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
-            delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
-            delta_W2 = np.zeros((self.n_outputs, self.n_hidden), dtype=np.float32)
-            delta_b2 = np.zeros((self.n_outputs, ), dtype=np.float32)
-
-            prev_delta_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
-            prev_delta_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
-            prev_delta_W2 = np.zeros((self.n_outputs, self.n_hidden), dtype=np.float32)
-            prev_delta_b2 = np.zeros((self.n_outputs, ), dtype=np.float32)
-
-            total_rec_err = 0.0
-            #for each column (training case) in X
-            for idx in range(0, np.shape(self.X)[1]):
-                x = self.X[:, idx] * 1.0
-
-                #perform forward pass
-                a2, a3 = self.forward_pass_for_one_case(x)
-
-                rec_sqr_err = LA.norm(x - a3)
-
-                #error for each node (delta) in output layer
-                delta3 = -(x - a3) * self.dsigmoid(a3)
-                delta2 = np.dot(np.transpose(self.W2), delta3) * self.dsigmoid(a2)
-
-
-                p_deriv_W2 = np.dot(delta3[:, None], np.transpose(a2[:, None]))
-                p_deriv_b2 = delta3
-
-                delta_W2 = delta_W2 + p_deriv_W2
-                delta_b2 = delta_b2 + p_deriv_b2
-
-                p_deriv_W1 = np.dot(delta2[:, None], np.transpose(x[:, None]))
-                p_deriv_b1 = delta2
-
-                delta_W1 = delta_W1 + p_deriv_W1
-                delta_b1 = delta_b1 + p_deriv_b1
-
-                total_rec_err += rec_sqr_err
-
-            #having 1/m instead of 1.0/m seems to be messing up the reconstruction
-            self.W2 = self.W2 - alpha*((1.0/self.X.shape[1])*delta_W2) + (M * prev_delta_W2)
-            self.b2 = self.b2 - alpha*((1.0/self.X.shape[1])*delta_b2)
-
-            self.W1 = self.W1 - alpha*((1.0/self.X.shape[1])*delta_W1) + (M * prev_delta_W1)
-            self.b1 = self.b1 - alpha*((1.0/self.X.shape[1])*delta_b1)
-
-            prev_delta_W2 = delta_W2
-            prev_delta_b2 = delta_b2
-            prev_delta_W1 = delta_W1
-            prev_delta_b1 = delta_b1
-
-            if i == iter-1:
-                print ("Number of iterations: %i" % iter)
-                print ("Total Reconstruction Error: %f" % total_rec_err)
+        self.W1,self.b1,self.W2,self.b2 = self.unpackTheta(res.x)
 
 
     def visualize_hidden(self):
@@ -150,7 +161,7 @@ class SimpleAutoEncoder(object):
         for i in range(0, 40):
             #hImg = np.zeros((810,), dtype=np.int32)
             x = self.X[:, i]
-            a2, a3 = self.forward_pass_for_one_case(x)
+            a2, a3 = self.forward_pass_for_one_case(x,self.W1,self.b1,self.W2,self.b2)
             if i > 0:
                 rec_err = LA.norm(a3-x)*255.0
                 print ("Reconstruction Error for image %i is %f" % (i+1, rec_err))
