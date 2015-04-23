@@ -2,6 +2,7 @@ __author__ = 'Thushan Ganegedara'
 
 import numpy as np
 import math
+import os
 from scipy import optimize
 from scipy import misc
 from numpy import linalg as LA
@@ -22,7 +23,7 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=40, W1=None, W2=None, b1=None, b2=None):
+    def __init__(self, n_inputs=810, n_hidden=90, W1=None, W2=None, b1=None, b2=None):
         self.X = np.zeros((810, 40), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
@@ -30,10 +31,7 @@ class SimpleAutoEncoder(object):
         self.n_inputs = n_inputs
         self.n_outputs = n_inputs
 
-
         #generate random weights for W
-
-
         if W1 == None:
             val_range1 = [-math.sqrt(6.0/(n_inputs+n_hidden+1)), math.sqrt(6.0/(n_inputs+n_hidden+1))]
             W1 = val_range1[0] + np.random.random_sample((n_hidden, n_inputs))*2*val_range1[1]
@@ -99,7 +97,6 @@ class SimpleAutoEncoder(object):
 
     def unpackTheta(self,theta):
         sIdx = 0
-        tmp = theta[sIdx:self.n_hidden*self.n_hidden-1]
         W1 = np.reshape(theta[sIdx:self.n_inputs*self.n_hidden], (self.n_hidden, self.n_inputs))
         sIdx = self.n_hidden*self.n_inputs
         b1 = np.reshape(theta[sIdx:sIdx+self.n_hidden],(self.n_hidden,))
@@ -108,7 +105,7 @@ class SimpleAutoEncoder(object):
         sIdx = sIdx + self.n_outputs*self.n_hidden
         b2 = np.reshape(theta[sIdx:],(self.n_outputs,))
 
-        return W1,b1,W2,b2
+        return W1, b1, W2, b2
 
     def cost_prime(self,theta):
 
@@ -133,9 +130,9 @@ class SimpleAutoEncoder(object):
             d_W1 = d_W1 + np.dot(delta2[:, None], np.transpose(x[:, None]))
             d_b1 = d_b1 + delta2
 
-        d_W2 = (1.0/size_data)*d_W2
+        d_W2 = (1.0/size_data)*d_W2 + 0.1 * W2
         d_b2 = (1.0/size_data)*d_b2
-        d_W1 = (1.0/size_data)*d_W1
+        d_W1 = (1.0/size_data)*d_W1 + 0.1 * W1
         d_b1 = (1.0/size_data)*d_b1
 
         return self.packTheta(d_W1, d_b1, d_W2, d_b2)
@@ -146,16 +143,22 @@ class SimpleAutoEncoder(object):
 
         self.W1,self.b1,self.W2,self.b2 = self.unpackTheta(res.x)
 
+    def mkdir_if_not_exist(self,name):
+        if not os.path.exists(name):
+            os.makedirs(name)
 
     def visualize_hidden(self):
-
+        h_dir = "Hidden"
+        self.mkdir_if_not_exist(h_dir)
         for i in range(self.n_hidden):
             hImg = (self.W1[i,:]/LA.norm(self.W1[i,:]))*1000.0
             img = Image.fromarray(np.reshape(hImg, (27, 30))).convert('LA')
-            img.save('hImg'+str(i)+'.png')
+            img.save(h_dir + "\\" + 'hImg'+str(i)+'.png')
 
     #save reconstructed images
     def save_reconstructed(self):
+        i_dir = "Reconstructed"
+        self.mkdir_if_not_exist(i_dir)
 
         print ("Reconstructing the Inputs ...")
         for i in range(0, 40):
@@ -169,7 +172,7 @@ class SimpleAutoEncoder(object):
             rec_img = np.reshape(rec_vec, (27, 30))
 
             img = Image.fromarray(rec_img).convert('LA')
-            img.save('recImg'+str(i+1)+'.png')
+            img.save(i_dir + '\\recImg'+str(i+1)+'.png')
 
 #this calls the __init__ method automatically
 dA = SimpleAutoEncoder()
