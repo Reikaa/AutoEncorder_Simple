@@ -2,6 +2,7 @@
 *.png
 *.jpg
 *.dat
+.ipython/
 .idea/
 Data/
 Output/

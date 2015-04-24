@@ -23,7 +23,7 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=50, W1=None, W2=None, b1=None, b2=None):
+    def __init__(self, n_inputs=810, n_hidden=20, W1=None, W2=None, b1=None, b2=None):
         self.X = np.zeros((810, 40), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
@@ -38,7 +38,7 @@ class SimpleAutoEncoder(object):
             self.W1 = W1
 
         if W2 == None:
-            val_range2 = [-math.sqrt(6/(self.n_outputs+n_hidden+1)), math.sqrt(6/(self.n_outputs+n_hidden+1))]
+            val_range2 = [-math.sqrt(6.0/(self.n_outputs+n_hidden+1)), math.sqrt(6.0/(self.n_outputs+n_hidden+1))]
             W2 = val_range2[0] + np.random.random_sample((self.n_outputs, n_hidden))*2*val_range2[1]
             self.W2 = W2
 
@@ -65,7 +65,7 @@ class SimpleAutoEncoder(object):
         self.X = self.X/255.0
 
 
-    def forward_pass_for_one_case(self, x, W1,b1,W2,b2):
+    def forward_pass_for_one_case(self, x, W1, b1, W2, b2):
 
         z2 = np.dot(W1, x) + b1
         a2 = self.sigmoid(z2)
@@ -75,17 +75,17 @@ class SimpleAutoEncoder(object):
 
         return a2, a3
 
-    #cost calculate the cost you get given all the inputs feed forward through the network
-    #at the moment I am using the squared error between the reconstructed and the input
-    #theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
+    # cost calculate the cost you get given all the inputs feed forward through the network
+    # at the moment I am using the squared error between the reconstructed and the input
+    # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
     # Theta will be the input that the optimization method trying to optimize
     def cost(self, theta):
-        W1,b1,W2,b2 = self.unpackTheta(theta)
+        W1, b1, W2, b2 = self.unpackTheta(theta)
         tot_sqr_err = 0.0
         size_data = self.X.shape[1]
         for idx in range(size_data):
-            x = self.X[:,idx]
-            a2, a3 = self.forward_pass_for_one_case(x,W1,b1,W2,b2)
+            x = self.X[:, idx]
+            a2, a3 = self.forward_pass_for_one_case(x, W1, b1, W2, b2)
             sqr_err = 0.5 * LA.norm(a3-x)
             tot_sqr_err += sqr_err
 
@@ -136,10 +136,10 @@ class SimpleAutoEncoder(object):
             d_W1 = d_W1 + np.dot(delta2[:, None], np.transpose(x[:, None]))
             d_b1 = d_b1 + delta2
 
-        d_W2 = (1.0/size_data)*d_W2
-        d_b2 = (1.0/size_data)*d_b2
-        d_W1 = (1.0/size_data)*d_W1
-        d_b1 = (1.0/size_data)*d_b1
+        d_W2 = (1.0/size_data) * d_W2
+        d_b2 = (1.0/size_data) * d_b2
+        d_W1 = (1.0/size_data) * d_W1
+        d_b1 = (1.0/size_data) * d_b1
 
         return self.packTheta(d_W1, d_b1, d_W2, d_b2)
 
@@ -156,12 +156,29 @@ class SimpleAutoEncoder(object):
     def back_prop(self, iter=500, alpha=0.75, M = 0.15):
         args = self.packTheta(self.W1,self.b1,self.W2,self.b2)
         res = optimize.minimize(fun=self.cost, x0=args, jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':1000,'disp':True})
-        err = optimize.check_grad(func=self.cost, x0=args, grad=self.cost_prime, epsilon=0.0001)
+        err = optimize.check_grad(func=self.cost, x0=args, grad=self.cost_prime)
         print(err)
 
         self.W1,self.b1,self.W2,self.b2 = self.unpackTheta(res.x)
 
-    def mkdir_if_not_exist(self,name):
+    def check_grad_manual(self,epsilon=0.000001):
+        theta = self.packTheta(self.W1, self.b1, self.W2, self.b2)
+        total_err = 0.0
+        for i in range(theta.size):
+            e_i = np.zeros((theta.size,),dtype=np.float32)
+            e_i[i] = 1.0*epsilon
+            theta_i_plus = theta + e_i
+            theta_i_minus = theta - e_i
+
+            theta_g = self.cost_prime(theta)
+            theta_appx = (self.cost(theta_i_plus)-self.cost(theta_i_minus))/(2*epsilon)
+
+            err = abs(theta_g[i] - theta_appx)
+            total_err += err
+
+        print(total_err/(theta.size*self.X.shape[1]))
+
+    def mkdir_if_not_exist(self, name):
         if not os.path.exists(name):
             os.makedirs(name)
 
@@ -195,6 +212,7 @@ class SimpleAutoEncoder(object):
 #this calls the __init__ method automatically
 dA = SimpleAutoEncoder()
 dA.load_data()
-dA.back_prop()
-dA.visualize_hidden()
-dA.save_reconstructed()
+dA.check_grad_manual()
+#dA.back_prop()
+#dA.visualize_hidden()
+#dA.save_reconstructed()
