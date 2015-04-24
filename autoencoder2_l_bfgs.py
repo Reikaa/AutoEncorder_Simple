@@ -23,7 +23,7 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=20, W1=None, W2=None, b1=None, b2=None):
+    def __init__(self, n_inputs=810, n_hidden=90, W1=None, W2=None, b1=None, b2=None):
         self.X = np.zeros((810, 40), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
@@ -34,21 +34,21 @@ class SimpleAutoEncoder(object):
         #generate random weights for W
         if W1 == None:
             val_range1 = [-math.sqrt(6.0/(n_inputs+n_hidden+1)), math.sqrt(6.0/(n_inputs+n_hidden+1))]
-            W1 = val_range1[0] + np.random.random_sample((n_hidden, n_inputs))*2*val_range1[1]
+            W1 = val_range1[0] + np.random.random_sample((n_hidden, n_inputs))*2.0*val_range1[1]
             self.W1 = W1
 
         if W2 == None:
-            val_range2 = [-math.sqrt(6.0/(self.n_outputs+n_hidden+1)), math.sqrt(6.0/(self.n_outputs+n_hidden+1))]
-            W2 = val_range2[0] + np.random.random_sample((self.n_outputs, n_hidden))*2*val_range2[1]
+            val_range2 = [-math.sqrt(60.0/(self.n_outputs+n_hidden+1)), math.sqrt(60.0/(self.n_outputs+n_hidden+1))]
+            W2 = val_range2[0] + np.random.random_sample((self.n_outputs, n_hidden))*2.0*val_range2[1]
             self.W2 = W2
 
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
         if b1 == None:
-            b1 = -0.001 + np.random.random_sample((n_hidden,)) * 0.002
+            b1 = -0.01 + np.random.random_sample((n_hidden,)) * 0.02
             self.b1 = b1
 
         if b2 == None:
-            b2 = -0.001 + np.random.random_sample((self.n_outputs,)) * 0.002
+            b2 = -0.01 + np.random.random_sample((self.n_outputs,)) * 0.02
             self.b2 = b2
 
 
@@ -153,11 +153,10 @@ class SimpleAutoEncoder(object):
     # Nact  = number of active bounds at final generalized Cauchy point
     # Projg = norm of the final projected gradient
     # F     = final function value '''
-    def back_prop(self, iter=500, alpha=0.75, M = 0.15):
+    def back_prop(self, iter=1000):
         args = self.packTheta(self.W1,self.b1,self.W2,self.b2)
-        res = optimize.minimize(fun=self.cost, x0=args, jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':1000,'disp':True})
-        err = optimize.check_grad(func=self.cost, x0=args, grad=self.cost_prime)
-        print(err)
+        res = optimize.minimize(fun=self.cost, x0=args, jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        #err = optimize.check_grad(func=self.cost, x0=args, grad=self.cost_prime)
 
         self.W1,self.b1,self.W2,self.b2 = self.unpackTheta(res.x)
 
@@ -212,7 +211,7 @@ class SimpleAutoEncoder(object):
 #this calls the __init__ method automatically
 dA = SimpleAutoEncoder()
 dA.load_data()
-dA.check_grad_manual()
-#dA.back_prop()
-#dA.visualize_hidden()
-#dA.save_reconstructed()
+#dA.check_grad_manual()
+dA.back_prop()
+dA.visualize_hidden()
+dA.save_reconstructed()
