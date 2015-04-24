@@ -23,7 +23,7 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=90, W1=None, W2=None, b1=None, b2=None):
+    def __init__(self, n_inputs=810, n_hidden=50, W1=None, W2=None, b1=None, b2=None):
         self.X = np.zeros((810, 40), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
@@ -75,6 +75,10 @@ class SimpleAutoEncoder(object):
 
         return a2, a3
 
+    #cost calculate the cost you get given all the inputs feed forward through the network
+    #at the moment I am using the squared error between the reconstructed and the input
+    #theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
+    # Theta will be the input that the optimization method trying to optimize
     def cost(self, theta):
         W1,b1,W2,b2 = self.unpackTheta(theta)
         tot_sqr_err = 0.0
@@ -95,7 +99,7 @@ class SimpleAutoEncoder(object):
         theta = np.concatenate((theta_p1,theta_p2))
         return theta
 
-    def unpackTheta(self,theta):
+    def unpackTheta(self, theta):
         sIdx = 0
         W1 = np.reshape(theta[sIdx:self.n_inputs*self.n_hidden], (self.n_hidden, self.n_inputs))
         sIdx = self.n_hidden*self.n_inputs
@@ -107,9 +111,11 @@ class SimpleAutoEncoder(object):
 
         return W1, b1, W2, b2
 
+    # Cost prime is the gradient of the cost function.
+    # In other words this is dC/dW in the delta rule (i.e. W = W - alpha*dC/dW)
     def cost_prime(self,theta):
 
-        W1,b1,W2,b2 = self.unpackTheta(theta)
+        W1, b1, W2, b2 = self.unpackTheta(theta)
 
         d_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
         d_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
@@ -130,16 +136,28 @@ class SimpleAutoEncoder(object):
             d_W1 = d_W1 + np.dot(delta2[:, None], np.transpose(x[:, None]))
             d_b1 = d_b1 + delta2
 
-        d_W2 = (1.0/size_data)*d_W2 + 0.1 * W2
+        d_W2 = (1.0/size_data)*d_W2
         d_b2 = (1.0/size_data)*d_b2
-        d_W1 = (1.0/size_data)*d_W1 + 0.1 * W1
+        d_W1 = (1.0/size_data)*d_W1
         d_b1 = (1.0/size_data)*d_b1
 
         return self.packTheta(d_W1, d_b1, d_W2, d_b2)
 
+    # back_propagation method uses Scipy optimize.minimize method to optimize Theta
+    # fun - Cost function, x0 - initial Theta value, jac - gradient of cost function, method - optimization technique
+    ''' Values shown by optimize.minimize when 'disp' = true
+    # Tit   = total number of iterations
+    # Tnf   = total number of function evaluations
+    # Tnint = total number of segments explored during Cauchy searches
+    # Skip  = number of BFGS updates skipped
+    # Nact  = number of active bounds at final generalized Cauchy point
+    # Projg = norm of the final projected gradient
+    # F     = final function value '''
     def back_prop(self, iter=500, alpha=0.75, M = 0.15):
         args = self.packTheta(self.W1,self.b1,self.W2,self.b2)
-        res = optimize.minimize(self.cost, x0=args, jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':1000,'disp':True})
+        res = optimize.minimize(fun=self.cost, x0=args, jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':1000,'disp':True})
+        err = optimize.check_grad(func=self.cost, x0=args, grad=self.cost_prime, epsilon=0.0001)
+        print(err)
 
         self.W1,self.b1,self.W2,self.b2 = self.unpackTheta(res.x)
 
