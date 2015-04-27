@@ -23,8 +23,11 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=90, W1=None, W2=None, b1=None, b2=None):
+    def __init__(self, n_inputs=810, n_hidden=90, W1=None, W2=None, b1=None, b2=None, m_batch_size=30):
         self.X = np.zeros((810, 40), dtype=np.float32)
+
+        self.m_batch_size = m_batch_size
+        self.min_batch_X = np.zeros((n_inputs, m_batch_size), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
         self.n_hidden = n_hidden
@@ -38,7 +41,7 @@ class SimpleAutoEncoder(object):
             self.W1 = W1
 
         if W2 == None:
-            val_range2 = [-math.sqrt(60.0/(self.n_outputs+n_hidden+1)), math.sqrt(60.0/(self.n_outputs+n_hidden+1))]
+            val_range2 = [-math.sqrt(24.0/(self.n_outputs+n_hidden+1)), math.sqrt(24.0/(self.n_outputs+n_hidden+1))]
             W2 = val_range2[0] + np.random.random_sample((self.n_outputs, n_hidden))*2.0*val_range2[1]
             self.W2 = W2
 
@@ -48,7 +51,7 @@ class SimpleAutoEncoder(object):
             self.b1 = b1
 
         if b2 == None:
-            b2 = -0.01 + np.random.random_sample((self.n_outputs,)) * 0.02
+            b2 = -0.02 + np.random.random_sample((self.n_outputs,)) * 0.04
             self.b2 = b2
 
 
@@ -63,7 +66,21 @@ class SimpleAutoEncoder(object):
             self.X[:, i-1] = imgVec[:, 0]
 
         self.X = self.X/255.0
+        #mean_X = np.mean(self.X, axis=0)
+        #for i in range(self.X.shape[1]):
+        #    self.X[:,i] = self.X[:,i]-mean_X[i,]
 
+    def renew_dataset(self):
+        sel_idx = []
+        tmp_data = np.zeros((self.X.shape[0],self.m_batch_size),dtype=np.float32)
+        for dIdx in range(self.m_batch_size):
+            while True:
+                tmp_idx = np.random.randint(self.X.shape[1])
+                if tmp_idx not in sel_idx:
+                    sel_idx.append(tmp_idx)
+                    tmp_data[:, dIdx] = self.X[:, tmp_idx]
+                    break
+        return tmp_data
 
     def forward_pass_for_one_case(self, x, W1, b1, W2, b2):
 
@@ -74,24 +91,6 @@ class SimpleAutoEncoder(object):
         a3 = self.sigmoid(z3)
 
         return a2, a3
-
-    # cost calculate the cost you get given all the inputs feed forward through the network
-    # at the moment I am using the squared error between the reconstructed and the input
-    # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
-    # Theta will be the input that the optimization method trying to optimize
-    def cost(self, theta):
-        W1, b1, W2, b2 = self.unpackTheta(theta)
-        tot_sqr_err = 0.0
-        size_data = self.X.shape[1]
-        for idx in range(size_data):
-            x = self.X[:, idx]
-            a2, a3 = self.forward_pass_for_one_case(x, W1, b1, W2, b2)
-            sqr_err = 0.5 * LA.norm(a3-x)
-            tot_sqr_err += sqr_err
-
-        tot_sqr_err = tot_sqr_err/size_data
-
-        return tot_sqr_err
 
     def packTheta(self, W1, b1, W2, b2):
         theta_p1 = np.concatenate((np.reshape(W1, (self.n_hidden*self.n_inputs,)), b1))
@@ -111,9 +110,28 @@ class SimpleAutoEncoder(object):
 
         return W1, b1, W2, b2
 
+    # cost calculate the cost you get given all the inputs feed forward through the network
+    # at the moment I am using the squared error between the reconstructed and the input
+    # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
+    # Theta will be the input that the optimization method trying to optimize
+    def cost(self, theta,data):
+
+        W1, b1, W2, b2 = self.unpackTheta(theta)
+        tot_sqr_err = 0.0
+        size_data = data.shape[1]
+        for idx in range(size_data):
+            x = data[:, idx]
+            a2, a3 = self.forward_pass_for_one_case(x, W1, b1, W2, b2)
+            sqr_err = 0.5 * LA.norm(a3-x)
+            tot_sqr_err += sqr_err
+
+        tot_sqr_err = tot_sqr_err/size_data
+
+        return tot_sqr_err
+
     # Cost prime is the gradient of the cost function.
     # In other words this is dC/dW in the delta rule (i.e. W = W - alpha*dC/dW)
-    def cost_prime(self,theta):
+    def cost_prime(self,theta,data):
 
         W1, b1, W2, b2 = self.unpackTheta(theta)
 
@@ -122,9 +140,9 @@ class SimpleAutoEncoder(object):
         d_W2 = np.zeros((self.n_outputs, self.n_hidden), dtype=np.float32)
         d_b2 = np.zeros((self.n_outputs, ), dtype=np.float32)
 
-        size_data = self.X.shape[1]
+        size_data = data.shape[1]
         for idx in range(size_data):
-            x = self.X[:,idx]
+            x = data[:,idx]
             a2, a3 = self.forward_pass_for_one_case(x,W1,b1,W2,b2)
 
             delta3 = -(x - a3) * self.dsigmoid(a3)
@@ -153,12 +171,20 @@ class SimpleAutoEncoder(object):
     # Nact  = number of active bounds at final generalized Cauchy point
     # Projg = norm of the final projected gradient
     # F     = final function value '''
-    def back_prop(self, iter=1000):
-        args = self.packTheta(self.W1,self.b1,self.W2,self.b2)
-        res = optimize.minimize(fun=self.cost, x0=args, jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+    def back_prop_with_SGD(self, iter=1500):
+        #m_b_data = self.renew_dataset()
+        init_val = self.packTheta(self.W1,self.b1,self.W2,self.b2)
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.renew_dataset(),), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
         #err = optimize.check_grad(func=self.cost, x0=args, grad=self.cost_prime)
+        #print err
+        self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
-        self.W1,self.b1,self.W2,self.b2 = self.unpackTheta(res.x)
+    def back_prop(self, iter=1100):
+        init_val = self.packTheta(self.W1, self.b1, self.W2, self.b2)
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        #err = optimize.check_grad(func=self.cost, x0=args, grad=self.cost_prime)
+        #print err
+        self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
     def check_grad_manual(self,epsilon=0.000001):
         theta = self.packTheta(self.W1, self.b1, self.W2, self.b2)
