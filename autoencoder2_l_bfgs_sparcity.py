@@ -23,7 +23,7 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=20, W1=None, W2=None, b1=None, b2=None, m_batch_size=30):
+    def __init__(self, n_inputs=810, n_hidden=40, W1=None, W2=None, b1=None, b2=None, m_batch_size=30):
         self.X = np.zeros((810, 40), dtype=np.float32)
 
         self.m_batch_size = m_batch_size
@@ -187,79 +187,55 @@ class SimpleAutoEncoder(object):
         self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
     def test_back_prop_with_diff_grad_checks(self, iter=200):
+        eps = math.sqrt(np.finfo(float).eps)
         init_val = self.packTheta(self.W1, self.b1, self.W2, self.b2)
+
         err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X)
-        print ("Error after 200 iterations: %f" % err)
-        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        print ("Error after 0 iterations: %f, Error per Param: %f" % (err, err/init_val.size))
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter})
         self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
         err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X)
-        print ("Error after 400 iterations: %f" % err)
+        print ("Error after 200 iterations: %f, Error per Param: %f" % (err, err/init_val.size))
         init_val = res.x
-        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter})
         self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
         err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X)
-        print ("Error after 600 iterations: %f" % err)
+        print ("Error after 400 iterations: %f, Error per Param: %f" % (err, err/init_val.size))
         init_val = res.x
-        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter})
         self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
         err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X)
-        print ("Error after 800 iterations: %f" % err)
+        print ("Error after 600 iterations: %f, Error per Param: %f" % (err, err/init_val.size))
         init_val = res.x
-        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter})
         self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
         err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X)
-        print ("Error after 1000 iterations: %f" % err)
+        print ("Error after 800 iterations: %f, Error per Param: %f" % (err, err/init_val.size))
 
 
         #self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
-    def check_grad_manual(self,epsilon=0.00001):
-        theta = self.packTheta(self.W1, self.b1, self.W2, self.b2)
+    #this is the same as check_grad function
+    def check_grad_manual(self, theta, X, epsilon=0.00001):
+        #theta = self.packTheta(self.W1, self.b1, self.W2, self.b2)
         total_err = 0.0
         for i in range(theta.size):
-            e_i = np.zeros((theta.size,),dtype=np.float32)
+            e_i = np.zeros((theta.size,), dtype=np.float32)
             e_i[i] = 1.0*epsilon
             theta_i_plus = theta + e_i
             theta_i_minus = theta - e_i
 
-            theta_g = self.cost_prime(theta,self.X)
-            theta_appx = (self.cost(theta_i_plus,self.X)-self.cost(theta_i_minus, self.X))/(2*epsilon)
+            theta_g = self.cost_prime(theta, X)
+            theta_appx = (self.cost(theta_i_plus, X)-self.cost(theta_i_minus, X))/(2*epsilon)
 
-            err = abs(theta_g[i] - theta_appx)
+            err = (theta_g[i] - theta_appx)**2
             total_err += err
 
-        print(total_err/(theta.size*self.X.shape[1]))
-
-    def check_grad_manual2(self,epsilon=0.00001):
-        theta = self.packTheta(self.W1, self.b1, self.W2, self.b2)
-        total_err = 0.0
-        for i in range(theta.size):
-            e_i = np.zeros((theta.size,),dtype=np.float32)
-            e_i[i] = 1.0*epsilon
-            theta_i_plus = theta + e_i
-            theta_i_minus = theta - e_i
-
-            theta_g = self.cost_prime(theta,self.X)
-            theta_appx = (self.cost(theta_i_plus,self.X)-self.cost(theta, self.X))/epsilon
-
-            err = abs(theta_g[i] - theta_appx)
-            total_err += err
-
-        print(total_err/(theta.size*self.X.shape[1]))
-
-    def check_grad_manual3(self,epsilon=0.00001):
-        theta = self.packTheta(self.W1, self.b1, self.W2, self.b2)
-        total_err = 0.0
-
-        theta_g = self.cost_prime(theta, self.X)
-        theta_appx = optimize.approx_fprime(theta, self.cost, epsilon, self.X)
-
-        print(total_err/(theta.size*self.X.shape[1]))
-
+        return math.sqrt(total_err)
 
     def mkdir_if_not_exist(self, name):
         if not os.path.exists(name):
@@ -269,7 +245,7 @@ class SimpleAutoEncoder(object):
         h_dir = "Hidden"
         self.mkdir_if_not_exist(h_dir)
         for i in range(self.n_hidden):
-            hImg = (self.W1[i,:]/LA.norm(self.W1[i,:]))*1000.0
+            hImg = (self.W1[i,:]/LA.norm(self.W1[i, :]))*1000.0
             img = Image.fromarray(np.reshape(hImg, (27, 30))).convert('LA')
             img.save(h_dir + "\\" + 'hImg'+str(i)+'.png')
 
@@ -297,7 +273,6 @@ dA = SimpleAutoEncoder()
 dA.load_data()
 #dA.back_prop()
 dA.test_back_prop_with_diff_grad_checks()
-#dA.check_grad_manual3()
 
 #dA.visualize_hidden()
 #dA.save_reconstructed()
