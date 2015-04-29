@@ -122,7 +122,7 @@ class SimpleAutoEncoder(object):
         for idx in range(size_data):
             x = data[:, idx]
             a2, a3 = self.forward_pass_for_one_case(x, W1, b1, W2, b2)
-            sqr_err = 0.5 * LA.norm(a3-x)
+            sqr_err = 0.5 * np.sum((a3-x)**2)
             tot_sqr_err += sqr_err
 
         tot_sqr_err = tot_sqr_err/size_data
