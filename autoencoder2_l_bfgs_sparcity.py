@@ -11,6 +11,12 @@ from PIL import Image
 class SimpleAutoEncoder(object):
 
 
+    def kl_diverg(self,rho,rho_nh):
+        return rho*np.log(rho/rho_nh) + (1-rho)*np.log((1-rho)/(1-rho_nh))
+
+    def d_kl_diverg(self,rho,rho_nh):
+        return -(rho/rho_nh)+((1-rho)/(1-rho_nh))
+
     def sigmoid(self, x):
         return 1.0 / (1.0 + np.exp(-x))
         #return math.tanh(x)
@@ -23,16 +29,22 @@ class SimpleAutoEncoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs=810, n_hidden=40, W1=None, W2=None, b1=None, b2=None, m_batch_size=30):
+    def __init__(self, n_inputs=810, n_hidden=20, W1=None, W2=None, b1=None, b2=None, m_batch_size=30):
         self.X = np.zeros((810, 40), dtype=np.float32)
-
-        self.m_batch_size = m_batch_size
-        self.min_batch_X = np.zeros((n_inputs, m_batch_size), dtype=np.float32)
 
         #define global variables for n_inputs and n_hidden
         self.n_hidden = n_hidden
         self.n_inputs = n_inputs
         self.n_outputs = n_inputs
+
+        self.m_batch_size = m_batch_size
+        self.min_batch_X = np.zeros((n_inputs, m_batch_size), dtype=np.float32)
+
+        self.lam = 0.2
+        self.beta = 0.2
+        self.rho = 0.3
+
+        self.rho_nh = np.zeros((self.n_hidden,),dtype=np.float32)
 
         #generate random weights for W
         if W1 == None:
@@ -119,15 +131,20 @@ class SimpleAutoEncoder(object):
         W1, b1, W2, b2 = self.unpackTheta(theta)
         tot_sqr_err = 0.0
         size_data = data.shape[1]
+
+        self.rho_nh = np.ones((self.n_hidden,),dtype=np.float32)*0.01
+
         for idx in range(size_data):
             x = data[:, idx]
             a2, a3 = self.forward_pass_for_one_case(x, W1, b1, W2, b2)
-            sqr_err = 0.5 * LA.norm(a3-x)
+            self.rho_nh = self.rho_nh + a2
+            sqr_err = 0.5 * np.sum((a3-x)**2) + (self.lam/2)*np.sum(np.sum(W1**2,axis=1),axis=0) + (self.lam/2)*np.sum(np.sum(W2**2,axis=1), axis=0)
             tot_sqr_err += sqr_err
 
-        tot_sqr_err = tot_sqr_err/size_data
+        self.rho_nh = self.rho_nh/size_data
+        tot_err = tot_sqr_err/size_data + self.beta*np.sum(self.kl_diverg(self.rho,self.rho_nh))
 
-        return tot_sqr_err
+        return tot_err
 
     # Cost prime is the gradient of the cost function.
     # In other words this is dC/dW in the delta rule (i.e. W = W - alpha*dC/dW)
@@ -146,7 +163,7 @@ class SimpleAutoEncoder(object):
             a2, a3 = self.forward_pass_for_one_case(x,W1,b1,W2,b2)
 
             delta3 = -(x - a3) * self.dsigmoid(a3)
-            delta2 = np.dot(np.transpose(W2), delta3) * self.dsigmoid(a2)
+            delta2 = (np.dot(np.transpose(W2), delta3)+self.beta*self.d_kl_diverg(self.rho,self.rho_nh)) * self.dsigmoid(a2)
 
             d_W2 = d_W2 + np.dot(delta3[:, None], np.transpose(a2[:, None]))
             d_b2 = d_b2 + delta3
@@ -154,9 +171,9 @@ class SimpleAutoEncoder(object):
             d_W1 = d_W1 + np.dot(delta2[:, None], np.transpose(x[:, None]))
             d_b1 = d_b1 + delta2
 
-        d_W2 = (1.0/size_data) * d_W2
+        d_W2 = ((1.0/size_data) * d_W2) + (self.lam * W2)
         d_b2 = (1.0/size_data) * d_b2
-        d_W1 = (1.0/size_data) * d_W1
+        d_W1 = ((1.0/size_data) * d_W1) + (self.lam * W1)
         d_b1 = (1.0/size_data) * d_b1
 
         return self.packTheta(d_W1, d_b1, d_W2, d_b2)
@@ -179,11 +196,9 @@ class SimpleAutoEncoder(object):
         #print err
         self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
-    def back_prop(self, iter=500):
+    def back_prop(self, iter=1000):
         init_val = self.packTheta(self.W1, self.b1, self.W2, self.b2)
-        #res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
-        err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X)
-        print err
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
         self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
     def test_back_prop_with_diff_grad_checks(self, iter=200):
@@ -216,8 +231,6 @@ class SimpleAutoEncoder(object):
         err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X)
         print ("Error after 800 iterations: %f, Error per Param: %f" % (err, err/init_val.size))
 
-
-        #self.W1, self.b1, self.W2, self.b2 = self.unpackTheta(res.x)
 
     #this is the same as check_grad function
     def check_grad_manual(self, theta, X, epsilon=0.00001):
