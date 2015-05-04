@@ -7,7 +7,7 @@ from scipy import misc
 class StackedAutoencoder(object):
 
     def __init__(self,data):
-        sa1 = SparseAutoencoder(self, X=data)
+
 
     def load_data(self):
 
@@ -24,3 +24,7 @@ class StackedAutoencoder(object):
         in_dim = 27*30
         h1_dim = 18*20
         h2_dim = 9*10
+
+        sa1 = SparseAutoencoder(n_inputs=in_dim,n_hidden=h1_dim,X=self.X)
+        sa1.back_prop()
+        sa1.forward_pass_for_one_case
