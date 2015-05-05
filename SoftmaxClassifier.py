@@ -82,8 +82,8 @@ class SoftmaxClassifier(object):
 
         W1, b1 = self.unpackTheta(theta)
 
-        d_W1 = np.zeros((self.n_hidden, self.n_inputs), dtype=np.float32)
-        d_b1 = np.zeros((self.n_hidden,), dtype=np.float32)
+        d_W1 = np.zeros((self.n_outputs, self.n_inputs), dtype=np.float32)
+        d_b1 = np.zeros((self.n_outputs,), dtype=np.float32)
 
         size_data = data.shape[1]
         for idx in range(size_data):
@@ -104,5 +104,5 @@ class SoftmaxClassifier(object):
 
     def back_prop(self, iter=1000):
         init_val = self.packTheta(self.W1, self.b1)
-        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,self.Y), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
         self.W1, self.b1 = self.unpackTheta(res.x)
