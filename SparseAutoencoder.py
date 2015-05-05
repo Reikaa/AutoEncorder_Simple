@@ -9,7 +9,7 @@ from scipy import misc
 from numpy import linalg as LA
 from PIL import Image
 
-class SparseAutoEncoder(object):
+class SparseAutoencoder(object):
 
 
     def kl_diverg(self,rho,rho_nh):
@@ -241,12 +241,15 @@ class SparseAutoEncoder(object):
             img = Image.fromarray(rec_img).convert('LA')
             img.save(i_dir + '\\recImg'+str(i+1)+'.png')
 
+    def get_params(self):
+        return self.W1,self.b1,self.W2,self.b2
+
 
 #this calls the __init__ method automatically
-dA = SparseAutoEncoder()
-dA.load_data()
-dA.back_prop()
+#dA = SparseAutoEncoder()
+#dA.load_data()
+#dA.back_prop()
 #dA.test_back_prop_with_diff_grad_checks()
 
-dA.save_hidden()
-dA.save_reconstructed()
+#dA.save_hidden()
+#dA.save_reconstructed()
