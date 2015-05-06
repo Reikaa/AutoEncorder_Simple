@@ -9,7 +9,7 @@ class SoftmaxClassifier(object):
         return np.exp(x)
 
 
-    def __init__(self, n_inputs, n_outputs, X, Y, W1=None, W2=None, b1=None, b2=None):
+    def __init__(self, n_inputs, n_outputs, X, Y, W1=None, b1=None):
 
         self.X = X
         self.Y = Y
@@ -82,27 +82,35 @@ class SoftmaxClassifier(object):
 
         W1, b1 = self.unpackTheta(theta)
 
-        d_W1 = np.zeros((self.n_outputs, self.n_inputs), dtype=np.float32)
-        d_b1 = np.zeros((self.n_outputs,), dtype=np.float32)
+        d_theta = np.zeros((self.n_outputs, self.n_inputs+1), dtype=np.float32)
+
 
         size_data = data.shape[1]
         for idx in range(size_data):
             x = data[:,idx]
+            x_bias = np.concatenate((x,np.array([1])),axis=0)
+
             y = labels[idx]
             y_vec = [0.0] * self.n_outputs
             y_vec[y] = 1.0
             a2 = self.forward_pass_for_one_case(x, W1, b1)
 
             delta = y_vec - np.log(a2[y]/np.sum(a2))
-            d_W1 = d_W1 + np.dot(delta[:, None], np.transpose(x[:, None]))
-            d_b1 = d_b1 + delta
+            tmp_arr = np.dot(delta[:, None], np.transpose(x_bias[:, None]))
+            d_theta = d_theta + tmp_arr
 
-        d_W1 = ((1.0/size_data) * d_W1) + (self.lam * W1)
-        d_b1 = (1.0/size_data) * d_b1
 
-        return self.packTheta(d_W1, d_b1)
+        d_theta = ((1.0/size_data) * d_theta)
+        #d_b1 = (1.0/size_data) * d_b1
+
+        return np.reshape(d_theta,(self.n_outputs*(self.n_inputs+1),))
 
     def back_prop(self, iter=1000):
         init_val = self.packTheta(self.W1, self.b1)
         res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,self.Y), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
         self.W1, self.b1 = self.unpackTheta(res.x)
+        err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X,self.Y)
+        print err
+
+    def get_params(self):
+        return self.W1,self.b1

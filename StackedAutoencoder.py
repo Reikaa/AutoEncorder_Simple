@@ -47,11 +47,11 @@ class StackedAutoencoder(object):
 
 
     def train_model(self):
+
         in_dim = self.img_w*self.img_h
         h1_dim = 15*15
         h2_dim = 10*10
         h3_dim = 8*8
-
 
         data_size = self.X.shape[1]
 
@@ -102,6 +102,14 @@ class StackedAutoencoder(object):
 
         softmax = SoftmaxClassifier(n_inputs=h3_dim, n_outputs=self.o_size, X=X4, Y=self.Y_VEC)
         softmax.back_prop(iter=3)
+        W4_1,b4_1 = softmax.get_params()
+
+        output = np.zeros([self.o_size,data_size],dtype=np.float32)
+        idx = 0
+        for x in X4.T:
+            a2 = softmax.forward_pass_for_one_case(x,W4_1,b4_1)
+            output[:,idx] = a2
+            idx += 1
 
         print ("Finished Training")
 
