@@ -1,6 +1,7 @@
 __author__ = 'Thushan Ganegedara'
 
 from math import sqrt
+from math import isnan,isinf
 import numpy as np
 from scipy import optimize
 class SoftmaxClassifier(object):
@@ -23,7 +24,7 @@ class SoftmaxClassifier(object):
         #generate random weights for W
         if W1 == None:
             val_range1 = [0, 2*sqrt(6.0/(n_inputs+n_outputs+1))]
-            W1 = np.random.random_sample((n_outputs, n_inputs))*0.002
+            W1 = np.random.random_sample((n_outputs, n_inputs))*0.2
             self.W1 = W1
 
 
@@ -64,12 +65,13 @@ class SoftmaxClassifier(object):
     # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
     # Theta will be the input that the optimization method trying to optimize
     # make sure to send 5,4,9.. type of values for the 'labels', not the vectorized form
-    def cost(self, theta,data,labels):
+    def cost(self, theta,data,labels, lam=0.5):
 
         W1, b1 = self.unpackTheta(theta)
         tot_err = 0.0
         size_data = data.shape[1]
 
+        test = np.sum(data,axis=1)
         for idx in range(size_data):
             x = data[:, idx]
             x_bias = np.concatenate((x,np.array([1])),axis=0)
@@ -78,22 +80,27 @@ class SoftmaxClassifier(object):
 
             theta_mat = self.getThetaMatrix(W1,b1)
             theta_k = theta_mat[y,:]
-            tmp = np.dot(theta_mat,x_bias)
+            tmp = np.dot(theta_k,x_bias)
             log_top = np.exp(tmp)
-            log_bottom = np.sum(np.exp(np.dot(theta_mat,x_bias)))
+            tmp3 = np.exp(np.dot(theta_mat,x_bias))
+            log_bottom = np.sum(tmp3)
+
+            if log_bottom == 0. or isnan(log_bottom) or isinf(log_bottom):
+                print "test"
+
             tmp2 = np.log(log_top/log_bottom)
             err = -np.sum(tmp2)
 
             tot_err += err
 
-        tot_err = tot_err/size_data
+        tot_err = tot_err/size_data + (lam/2)*np.sum(np.sum(theta_mat**2))
 
         return tot_err
 
     # Cost prime is the gradient of the cost function.
     # In other words this is dC/dW in the delta rule (i.e. W = W - alpha*dC/dW)
     # make sure to send 5,4,9.. type of values for the 'labels', not the vectorized form
-    def cost_prime(self, theta, data, labels):
+    def cost_prime(self, theta, data, labels, lam=0.5):
 
         W1, b1 = self.unpackTheta(theta)
 
@@ -111,26 +118,32 @@ class SoftmaxClassifier(object):
             theta_mat = self.getThetaMatrix(W1, b1)
             theta_k = theta_mat[y, :]
             tmp = np.dot(theta_k.T,x_bias)
-            log_top = np.exp(tmp)
+            top = np.exp(tmp)
 
             tmp2 = np.dot(theta_mat,x_bias)
-            log_bottom = np.sum(np.exp(tmp2))
+            tmp3 = np.exp(tmp2)
+            bottom = np.sum(tmp3)
 
-            delta = y_vec - np.log(log_top/log_bottom)
+            if bottom == 0. or isnan(bottom) or isinf(bottom) :
+                print "test"
+
+            delta = y_vec - (top/bottom)
 
             tmp_arr = -np.dot(delta[:, None], np.transpose(x_bias[:, None]))
             d_theta = d_theta + tmp_arr
 
-        d_theta = ((1.0/size_data) * d_theta)
+        d_theta = ((1.0/size_data) * d_theta) + lam*theta_mat
 
         return np.reshape(d_theta,(self.n_outputs*(self.n_inputs+1),))
 
     def back_prop(self, iter=1000):
         init_val = self.packTheta(self.W1, self.b1)
-        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,self.Y), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        #err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X,self.Y)
+
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,self.Y,0.3), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
         self.W1, self.b1 = self.unpackTheta(res.x)
-        err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X,self.Y)
-        print err
+
+        #print ("Error: %f" %err)
 
     def get_params(self):
         return self.W1,self.b1

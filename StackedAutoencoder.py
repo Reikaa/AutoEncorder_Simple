@@ -56,7 +56,7 @@ class StackedAutoencoder(object):
         data_size = self.X.shape[1]
 
         sa1 = SparseAutoencoder(n_inputs=in_dim,n_hidden=h1_dim,X=self.X)
-        sa1.back_prop(iter=1)
+        sa1.back_prop(iter=20)
         W1_1,b1_1,W1_2,b1_2 = sa1.get_params()
         self.W1_1 = W1_1
 
@@ -70,7 +70,7 @@ class StackedAutoencoder(object):
 
         print ("Inputs for 2nd AE created. Size (%i, %i)" %(X2.shape[0],X2.shape[1]))
         sa2 = SparseAutoencoder(n_inputs=h1_dim,n_hidden=h2_dim,X=X2)
-        sa2.back_prop(iter=1)
+        sa2.back_prop(iter=50)
         W2_1,b2_1,W2_2,b2_2 = sa2.get_params()
         self.W2_1 = W2_1
 
@@ -85,7 +85,7 @@ class StackedAutoencoder(object):
 
         print ("Inputs for 2nd AE created. Size (%i, %i)" %(X3.shape[0],X3.shape[1]))
         sa3 = SparseAutoencoder(n_inputs=h2_dim, n_hidden=h3_dim, X=X3)
-        sa3.back_prop(iter=1)
+        sa3.back_prop(iter=50)
         W3_1,b3_1,W3_2,b3_2 = sa3.get_params()
         self.W3_1 = W3_1
 
