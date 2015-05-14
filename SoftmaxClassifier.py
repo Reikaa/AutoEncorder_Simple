@@ -19,7 +19,6 @@ class SoftmaxClassifier(object):
         self.n_inputs = n_inputs
         self.n_outputs = n_outputs
 
-        self.lam = 0.0001
 
         #generate random weights for W
         if W1 == None:
@@ -30,7 +29,7 @@ class SoftmaxClassifier(object):
 
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
         if b1 == None:
-            b1 = np.random.random_sample((n_outputs,)) * 0.02
+            b1 = np.random.random_sample((n_outputs,)) * 0.2
             self.b1 = b1
 
 
@@ -139,11 +138,50 @@ class SoftmaxClassifier(object):
     def back_prop(self, iter=1000):
         init_val = self.packTheta(self.W1, self.b1)
         #err = optimize.check_grad(self.cost, self.cost_prime, init_val, self.X,self.Y)
-
-        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,self.Y,0.3), jac=self.cost_prime, method='L-BFGS-B', options={'maxiter':iter,'disp':True})
+        res = optimize.minimize(fun=self.cost, x0=init_val, args=(self.X,self.Y,0.0001), jac=self.cost_prime, method='BFGS', options={'maxiter':iter,'disp':True})
         self.W1, self.b1 = self.unpackTheta(res.x)
 
-        #print ("Error: %f" %err)
+        #print ("Error (check_grad): %f" %err)
+
+    def back_prop_man(self, iter=1000, alpha=0.5, lam =0.0001):
+
+        theta_mat = self.getThetaMatrix(self.W1, self.b1)
+
+        for i in range(iter):
+            print ("Iteration: %i"%i)
+            d_theta = np.zeros((self.n_outputs, self.n_inputs+1), dtype=np.float32)
+            size_data = self.X.shape[1]
+
+            for idx in range(size_data):
+                x = self.X[:,idx]
+                x_bias = np.concatenate((x,np.array([1])),axis=0)
+
+                y = self.Y[idx]
+                y_vec = [0.0] * self.n_outputs
+                y_vec[y] = 1.0
+
+
+                theta_k = theta_mat[y, :]
+                tmp = np.dot(theta_k.T,x_bias)
+                top = np.exp(tmp)
+
+                tmp2 = np.dot(theta_mat,x_bias)
+                tmp3 = np.exp(tmp2)
+                bottom = np.sum(tmp3)
+
+                delta = y_vec - (top/bottom)
+
+                tmp_arr = -np.dot(delta[:, None], np.transpose(x_bias[:, None]))
+                d_theta = d_theta + tmp_arr
+
+            d_theta = ((1.0/size_data) * d_theta) + lam*theta_mat
+
+            theta_mat = theta_mat - alpha*d_theta
+
+
+        self.W1 = theta_mat[:,0:theta_mat.shape[1]-1]
+        self.b1 = theta_mat[:,theta_mat.shape[1]-1]
+
 
     def get_params(self):
         return self.W1,self.b1
