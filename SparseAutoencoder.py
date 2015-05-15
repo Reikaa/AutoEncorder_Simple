@@ -46,8 +46,8 @@ class SparseAutoencoder(object):
         self.min_batch_X = np.zeros((n_inputs, m_batch_size), dtype=np.float32)
 
         self.lam = 0.0001
-        self.beta = 0.5
-        self.rho = 0.25
+        self.beta = 0.1
+        self.rho = 0.3
 
         self.rho_nh = np.zeros((self.n_hidden,),dtype=np.float32)
 

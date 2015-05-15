@@ -49,14 +49,14 @@ class StackedAutoencoder(object):
     def train_model(self):
 
         in_dim = self.img_w*self.img_h
-        h1_dim = 15*15
-        h2_dim = 10*10
-        h3_dim = 8*8
+        h1_dim = 15**2
+        h2_dim = 10**2
+        h3_dim = 8**2
 
         data_size = self.X.shape[1]
 
         sa1 = SparseAutoencoder(n_inputs=in_dim,n_hidden=h1_dim,X=self.X)
-        sa1.back_prop(iter=4)
+        sa1.back_prop(iter=25)
         W1_1,b1_1,W1_2,b1_2 = sa1.get_params()
         self.W1_1 = W1_1
 
@@ -70,7 +70,7 @@ class StackedAutoencoder(object):
 
         print ("Inputs for 2nd AE created. Size (%i, %i)" %(X2.shape[0],X2.shape[1]))
         sa2 = SparseAutoencoder(n_inputs=h1_dim,n_hidden=h2_dim,X=X2)
-        sa2.back_prop(iter=15)
+        sa2.back_prop(iter=80)
         W2_1,b2_1,W2_2,b2_2 = sa2.get_params()
         self.W2_1 = W2_1
 
@@ -85,7 +85,7 @@ class StackedAutoencoder(object):
 
         print ("Inputs for 2nd AE created. Size (%i, %i)" %(X3.shape[0],X3.shape[1]))
         sa3 = SparseAutoencoder(n_inputs=h2_dim, n_hidden=h3_dim, X=X3)
-        sa3.back_prop(iter=15)
+        sa3.back_prop(iter=80)
         W3_1,b3_1,W3_2,b3_2 = sa3.get_params()
         self.W3_1 = W3_1
 
@@ -101,7 +101,7 @@ class StackedAutoencoder(object):
         print ("Inputs for 3rd AE created. Size (%i, %i)" %(X4.shape[0],X4.shape[1]))
 
         softmax = SoftmaxClassifier(n_inputs=h3_dim, n_outputs=self.o_size, X=X4, Y=self.Y_VEC)
-        softmax.back_prop_man(iter=50)
+        softmax.back_prop_man(iter=250)
         W4_1,b4_1 = softmax.get_params()
 
         output = np.zeros([self.o_size,data_size],dtype=np.float32)
@@ -112,6 +112,20 @@ class StackedAutoencoder(object):
             idx += 1
 
         print ("Finished Training")
+
+        outDigits = np.empty((1,self.d_size),dtype=np.int8)
+        totCorrect = 0
+        for i in range(self.d_size-1):
+            maxCol = np.max(output[:,i])
+            if maxCol>0.4:
+                maxIdx = np.argmax(output[:,i])
+                #outDigits[1,i]=maxIdx
+                if self.Y_VEC[i]==maxIdx:
+                    totCorrect = totCorrect+1
+            #else:
+                #outDigits[1,i]=-1
+
+        print ("Accuracy: %f" %(1.0*totCorrect/self.d_size))
 
     def mkdir_if_not_exist(self, name):
         if not os.path.exists(name):
