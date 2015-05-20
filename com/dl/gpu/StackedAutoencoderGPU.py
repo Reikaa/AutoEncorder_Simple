@@ -15,16 +15,16 @@ import time
 
 class StackedAutoencoder(object):
 
-    def __init__(self):
-        self.img_w = 28
-        self.img_h = 28
-        self.batch_size = 100
-        self.d_size = 5000
-        self.o_size = 10
-        self.W1_1 = None
-        self.W2_1 = None
-        self.W3_1 = None
+    def __init__(self,in_size=784, hidden_size = [500, 250, 125], out_size = 10, batch_size = 100):
+        self.i_size = in_size
+        self.h_sizes = hidden_size
+        self.o_size = out_size
+        self.batch_size = batch_size
 
+        self.n_layers = len(hidden_size)
+        self.da_layers = []
+        self.da_activations = []
+        self.thetas = []
 
     def load_data(self):
 
@@ -49,44 +49,65 @@ class StackedAutoencoder(object):
 
         return all_data
 
-    def train_model(self, all_data,iterations=50):
+    def greedy_pre_training(self, train_x ,iterations=50):
 
-        in_dim = self.img_w*self.img_h
-        h1_dim = 20**2
-        h2_dim = 15**2
-        h3_dim = 10**2
-
-        train_x,train_y = all_data[0]
-        valid_x,valid_y = all_data[1]
-        test_x,test_y = all_data[2]
-
-        n_train_batches = train_x.get_value(borrow=True).shape[0] / self.batch_size
+        pre_train_fns = []
 
         x = T.matrix('x')
         y = T.ivector('y')
-        index = T.lscalar()
 
-        sa1 = SparseAutoencoder(n_inputs=in_dim,n_hidden=h1_dim,x=x)
+        for i in xrange(self.n_layers):
 
-        cost, updates = sa1.get_cost_and_weight_update(l_rate=0.5)
+            if i==0:
+                curr_input_size = self.i_size
+            else:
+                curr_input_size = self.h_sizes[i-1]
 
-        train_sa1 = function(inputs=[index],outputs=cost,updates=updates,givens={
-            x: train_x[index * self.batch_size: (index+1) * self.batch_size]
-            }
-        )
+            if i==0:
+                curr_input = self.train_x
+            else:
+                curr_input = ###
+
+            index = T.lscalar()
+
+            sa = SparseAutoencoder(n_inputs=curr_input_size,n_hidden=self.h_sizes[i],x=curr_input)
+
+            cost, updates = sa.get_cost_and_weight_update(l_rate=0.5)
+
+            sa_fn = function(inputs=[index],outputs=cost,updates=updates,givens={
+                x: curr_input[index * self.batch_size: (index+1) * self.batch_size]
+                }
+            )
+
+            pre_train_fns.append(sa_fn)
+
+        return pre_train_fns
+
+    def test_model(self, pre_epochs=50, pre_lr=0.001, tr_epochs=1000, batch_size=100):
+        datasets = self.load_data()
+
+        (train_set_x, train_set_y) = datasets[0]
+        (valid_set_x, valid_set_y) = datasets[1]
+        (test_set_x, test_set_y) = datasets[2]
+
+        n_train_batches = train_set_x.get_value(borrow=True).shape[0] / self.batch_size
+
+        pre_train_fns = self.greedy_pre_training(train_set_x)
 
         start_time = time.clock()
-        for epoch in xrange(iterations):
-            c=[]
-            for batch_index in xrange(n_train_batches):
-                c.append(train_sa1(batch_index))
+        for i in xrange(self.da_layers):
 
-            print 'Training epoch %d, cost ' % epoch, np.mean(c)
+            for epoch in xrange(pre_epochs):
+                c=[]
+                for batch_index in xrange(n_train_batches):
+                    c.append(pre_train_fns[i](batch_index))
 
-        end_time = time.clock()
-        training_time = (end_time - start_time)
+                print 'Training epoch %d, cost ' % epoch, np.mean(c)
 
-        print "Training time: %f" %training_time
+            end_time = time.clock()
+            training_time = (end_time - start_time)
+
+            print "Training time: %f" %training_time
 
     def mkdir_if_not_exist(self, name):
         if not os.path.exists(name):
