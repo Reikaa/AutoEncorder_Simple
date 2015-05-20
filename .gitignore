@@ -6,3 +6,6 @@
 .idea/
 Data/
 Output/
+com/dl/gpu/ae_example.py
+com/dl/gpu/logistic_sgd.py
+com/dl/gpu/logistic_sgd.pyc

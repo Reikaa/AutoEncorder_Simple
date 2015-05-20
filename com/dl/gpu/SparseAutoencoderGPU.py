@@ -46,20 +46,20 @@ class SparseAutoencoder(object):
         #generate random weights for W
         if W1 == None:
             val_range1 = [-math.sqrt(6.0/(n_inputs+n_hidden+1)), math.sqrt(6.0/(n_inputs+n_hidden+1))]
-            W1 = val_range1[0] + np.random.random_sample((n_hidden, n_inputs))*2.0*val_range1[1]
+            W1 = val_range1[0] + np.random.random_sample((n_inputs,n_hidden))*2.0*val_range1[1]
             W1 = np.asarray(W1,dtype=config.floatX)
             self.W1 = shared(value=W1, name='W1', borrow=True)
 
         if W2 == None:
             val_range2 = [-math.sqrt(6.0/(self.n_outputs+n_hidden+1)), math.sqrt(6.0/(self.n_outputs+n_hidden+1))]
-            W2 = val_range2[0] + np.random.random_sample((self.n_outputs, n_hidden))*2.0*val_range2[1]
+            W2 = val_range2[0] + np.random.random_sample((n_hidden,self.n_outputs))*2.0*val_range2[1]
             W2 = np.asarray(W2,dtype=config.floatX)
             self.W2 = shared(value=W2, name='W2', borrow=True)
 
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
         if b1 == None:
             b1 = -0.01 + np.random.random_sample((n_hidden,)) * 0.02
-            self.b1 = shared(value=np.asarray(b1, dtype=config.floatX), name='b1', borrow=True)
+            self.b1 = shared(value=np.asarray(b1.T, dtype=config.floatX), name='b1', borrow=True)
 
         if b2 == None:
             b2 = -0.02 + np.random.random_sample((self.n_outputs,)) * 0.04
@@ -67,10 +67,10 @@ class SparseAutoencoder(object):
 
         self.theta = [self.W1,self.b1,self.W2,self.b2]
 
-    def forward_pass(self, x):
+    def forward_pass(self, input):
+        a2 = T.nnet.sigmoid(T.dot(input,self.W1) + self.b1)
 
-        a2 = T.nnet.sigmoid(T.dot(self.W1, x)+self.b1)
-        a3 = T.nnet.sigmoid(T.dot(self.W2, a2)+self.b2)
+        a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
         return a2, a3
 
     def packTheta(self, W1, b1, W2, b2):
@@ -114,24 +114,6 @@ class SparseAutoencoder(object):
 
         return cost, updates
 
-        ''' Cost Function
-        W1, b1, W2, b2 = self.unpackTheta(theta)
-        tot_sqr_err = 0.0
-        size_data = data.shape[1]
-
-        self.rho_nh = np.ones((self.n_hidden,),dtype=np.float32)*0.001
-
-        for idx in range(size_data):
-            x = data[:, idx]
-            a2, a3 = self.forward_pass_for_one_case(x, W1, b1, W2, b2)
-            self.rho_nh = self.rho_nh + a2
-            sqr_err = 0.5 * np.sum((a3-x)**2) + (self.lam/2)*np.sum(np.sum(W1**2,axis=1),axis=0) + (self.lam/2)*np.sum(np.sum(W2**2,axis=1), axis=0)
-            tot_sqr_err += sqr_err
-
-        self.rho_nh = self.rho_nh/size_data
-        tot_err = tot_sqr_err/size_data + self.beta*np.sum(self.kl_diverg(self.rho,self.rho_nh))
-
-        return tot_err'''
 
 
 #this calls the __init__ method automatically
