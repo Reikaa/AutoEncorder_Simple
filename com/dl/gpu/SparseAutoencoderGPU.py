@@ -73,23 +73,6 @@ class SparseAutoencoder(object):
         a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
         return a2, a3
 
-    def packTheta(self, W1, b1, W2, b2):
-        theta_p1 = T.concatenate((T.reshape(W1, (self.n_hidden*self.n_inputs,)), b1))
-        theta_p2 = T.concatenate((T.reshape(W2, (self.n_outputs*self.n_hidden,)), b2))
-        theta = T.concatenate((theta_p1,theta_p2))
-        return theta
-
-    def unpackTheta(self, theta):
-        sIdx = 0
-        W1 = T.reshape(theta[sIdx:self.n_inputs*self.n_hidden], (self.n_hidden, self.n_inputs))
-        sIdx = self.n_hidden*self.n_inputs
-        b1 = T.reshape(theta[sIdx:sIdx+self.n_hidden],(self.n_hidden,))
-        sIdx = sIdx + self.n_hidden
-        W2 = T.reshape(theta[sIdx:sIdx + self.n_outputs*self.n_hidden],(self.n_outputs,self.n_hidden))
-        sIdx = sIdx + self.n_outputs*self.n_hidden
-        b2 = T.reshape(theta[sIdx:],(self.n_outputs,))
-
-        return W1, b1, W2, b2
 
     # cost calculate the cost you get given all the inputs feed forward through the network
     # at the moment I am using the squared error between the reconstructed and the input
@@ -114,7 +97,8 @@ class SparseAutoencoder(object):
 
         return cost, updates
 
-
+    def get_params(self):
+        return self.theta
 
 #this calls the __init__ method automatically
 #dA = SparseAutoEncoder()

@@ -22,8 +22,8 @@ class StackedAutoencoder(object):
         self.batch_size = batch_size
 
         self.n_layers = len(hidden_size)
-        self.da_layers = []
-        self.da_activations = []
+        self.sa_layers = []
+        self.sa_activations = []
         self.thetas = []
 
     def load_data(self):
@@ -56,6 +56,8 @@ class StackedAutoencoder(object):
         x = T.matrix('x')
         y = T.ivector('y')
 
+        curr_input = self.train_x
+
         for i in xrange(self.n_layers):
 
             if i==0:
@@ -63,14 +65,14 @@ class StackedAutoencoder(object):
             else:
                 curr_input_size = self.h_sizes[i-1]
 
-            if i==0:
-                curr_input = self.train_x
-            else:
-                curr_input = ###
+            if i > 0:
+                a2,a3 = self.sa_layers[i-1].forward_pass(curr_input)
+                curr_input = a2
 
             index = T.lscalar()
 
             sa = SparseAutoencoder(n_inputs=curr_input_size,n_hidden=self.h_sizes[i],x=curr_input)
+            self.sa_layers.append(sa)
 
             cost, updates = sa.get_cost_and_weight_update(l_rate=0.5)
 
