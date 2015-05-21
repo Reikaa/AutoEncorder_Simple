@@ -2,11 +2,13 @@
 *.png
 *.jpg
 *.dat
+*.pyc
 .ipython/
 .idea/
 Data/
 Output/
 com/dl/gpu/sae_example.py
 com/dl/gpu/ae_example.py
+com/dl/gpu/mlp_example.py
 com/dl/gpu/logistic_sgd.py
 com/dl/gpu/logistic_sgd.pyc

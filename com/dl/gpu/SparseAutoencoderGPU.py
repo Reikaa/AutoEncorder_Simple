@@ -20,17 +20,16 @@ class SparseAutoencoder(object):
     def d_kl_diverg(self,rho,rho_nh):
         return -(rho/rho_nh)+((1-rho)/(1-rho_nh))
 
-
-    def dsigmoid(self, y):
-        return y * (1.0 - y)
-        #return 1.0-y**2
-
     #the value specified in the argument for each variable is the default value
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs, n_hidden, x=None, W1=None, W2=None, b1=None, b2=None):
-        self.x = x
+    def __init__(self, n_inputs, n_hidden, input=None, W1=None, W2=None, b1=None, b2=None):
+
+        if input is None:
+            self.input = T.dmatrix('input')
+        else:
+            self.input = input
 
         #define global variables for n_inputs and n_hidden
         self.n_hidden = n_hidden
@@ -59,7 +58,7 @@ class SparseAutoencoder(object):
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
         if b1 == None:
             b1 = -0.01 + np.random.random_sample((n_hidden,)) * 0.02
-            self.b1 = shared(value=np.asarray(b1.T, dtype=config.floatX), name='b1', borrow=True)
+            self.b1 = shared(value=np.asarray(b1, dtype=config.floatX), name='b1', borrow=True)
 
         if b2 == None:
             b2 = -0.02 + np.random.random_sample((self.n_outputs,)) * 0.04
@@ -80,10 +79,10 @@ class SparseAutoencoder(object):
     # Theta will be the input that the optimization method trying to optimize
     def get_cost_and_weight_update(self, l_rate):
 
-        a2,a3 = self.forward_pass(self.x)
+        a2,a3 = self.forward_pass(self.input)
 
         #cost = - T.sum(self.x * T.log(a3) + (1 - self.x) * T.log(1 - a3), axis=1)
-        cost = T.mean(0.5 * T.sum(T.sqr(a3-self.x), axis=1))
+        cost = T.mean(0.5 * T.sum(T.sqr(a3-self.input), axis=1))
 
         gparams = T.grad(cost, self.theta)
 
