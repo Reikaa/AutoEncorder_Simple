@@ -72,7 +72,7 @@ class StackedAutoencoder(object):
         y_mat = T.matrix('y_mat')
         idx = T.lscalar('idx')
 
-        curr_input = train_x
+        curr_input = self.x
 
         for i in xrange(self.n_layers):
 
@@ -86,7 +86,7 @@ class StackedAutoencoder(object):
                 a2,a3 = self.sa_layers[i-1].forward_pass(curr_input)
                 curr_input = a2
 
-            sa = SparseAutoencoder(n_inputs=curr_input_size,n_hidden=self.h_sizes[i],input=None)
+            sa = SparseAutoencoder(n_inputs=curr_input_size,n_hidden=self.h_sizes[i],input=curr_input)
             self.sa_layers.append(sa)
 
             cost, updates = sa.get_cost_and_weight_update(l_rate=0.5)
@@ -106,7 +106,7 @@ class StackedAutoencoder(object):
         cost, updates = softmax.get_cost_and_weight_update(l_rate=0.5)
 
         soft_fn = function(inputs=[idx],outputs=cost,updates=updates, givens={
-            self.x: curr_input[idx * self.batch_size: (idx+1) * self.batch_size],
+            curr_input: curr_input[idx * self.batch_size: (idx+1) * self.batch_size],
             y_mat: y_mat_full[idx * self.batch_size: (idx+1) * self.batch_size,:]
         })
 
