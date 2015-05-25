@@ -42,21 +42,13 @@ class SoftmaxClassifier(object):
         a = T.nnet.softmax(T.dot(input,self.W1) + self.b1)
         return a
 
-    def get_cost_and_weight_update(self, l_rate):
+    def get_cost(self, l_rate):
 
         a = self.forward_pass(self.x)
 
         cost = T.mean(0.5 * T.sum(T.sqr(a-self.y_mat), axis=1))
 
-        #gparam is a list of elements where each correspond to a single item in theta
-        #here for example, theta =[W1,b1] there for gparam = [W1_grad,b1_grad]
-        gparams = T.grad(cost, wrt=self.theta)
-
-        updates = [
-            (param, param - l_rate*gparam)
-            for param, gparam in zip(self.theta,gparams)]
-
-        return cost, updates
+        return cost
 
     def get_params(self):
         return self.theta

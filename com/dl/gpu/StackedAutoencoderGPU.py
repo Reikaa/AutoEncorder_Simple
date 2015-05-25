@@ -28,6 +28,9 @@ class StackedAutoencoder(object):
 
         self.x = T.matrix('x')
         self.y = T.ivector('y')
+        self.y_mat = T.matrix('y_mat')
+
+        self.fine_cost = T.dscalar('fine_cost')
 
     def load_data(self):
 
@@ -58,10 +61,11 @@ class StackedAutoencoder(object):
         valid_x,valid_y = get_shared_data(valid_set)
         test_x,test_y = get_shared_data(test_set)
 
-        tmp_train_y = train_set[1]
-        y_mat = get_vec_labels(tmp_train_y)
+        train_y_mat = get_vec_labels(train_set[1])
+        valid_y_mat = get_vec_labels(valid_set[1])
+        test_y_mat = get_vec_labels(test_set[1])
 
-        all_data = [(train_x,train_y),(valid_x,valid_y),(test_x,test_y),y_mat]
+        all_data = [(train_x,train_y),(valid_x,valid_y),(test_x,test_y),(train_y_mat,valid_y_mat,test_y_mat)]
 
         return all_data
 
@@ -69,8 +73,7 @@ class StackedAutoencoder(object):
 
         pre_train_fns = []
 
-        y_mat = T.matrix('y_mat')
-        idx = T.lscalar('idx')
+        index = T.lscalar('idx')
 
         curr_input = self.x
 
@@ -83,16 +86,24 @@ class StackedAutoencoder(object):
                 curr_input_size = self.h_sizes[i-1]
 
             if i > 0:
-                a2,a3 = self.sa_layers[i-1].forward_pass(curr_input)
+                a2,a3 = self.sa_layers[-1].forward_pass(curr_input)
                 curr_input = a2
 
             sa = SparseAutoencoder(n_inputs=curr_input_size,n_hidden=self.h_sizes[i],input=curr_input)
             self.sa_layers.append(sa)
+            self.thetas.extend(sa.theta)
 
             cost, updates = sa.get_cost_and_weight_update(l_rate=0.5)
 
-            sa_fn = function(inputs=[idx], outputs=cost, updates=updates, givens={
-                self.x: curr_input[idx * batch_size: (idx+1) * batch_size]
+            #the givens section in this line set the self.x that we assign as input to the initial
+            # curr_input value be a small batch rather than the full batch.
+            # however, we don't need to set subsequent inputs to be an only a minibatch
+            # because if self.x is only a portion, you're going to get the hidden activations
+            # corresponding to that small batch of inputs.
+            # Therefore, setting self.x to be a mini-batch is enough to make all the subsequents use
+            # hidden activations corresponding to that mini batch of self.x
+            sa_fn = function(inputs=[index], outputs=cost, updates=updates, givens={
+                self.x: train_x[index * batch_size: (index+1) * batch_size]
                 }
             )
 
@@ -102,28 +113,52 @@ class StackedAutoencoder(object):
         a2,a3 = self.sa_layers[-1].forward_pass(curr_input)
         curr_input = a2
 
-        softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=curr_input, y=train_y, y_mat=y_mat_full)
-        cost, updates = softmax.get_cost_and_weight_update(l_rate=0.5)
-
-        soft_fn = function(inputs=[idx],outputs=cost,updates=updates, givens={
-            curr_input: curr_input[idx * self.batch_size: (idx+1) * self.batch_size],
-            y_mat: y_mat_full[idx * self.batch_size: (idx+1) * self.batch_size,:]
-        })
-
-        pre_train_fns.append(soft_fn)
+        softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=curr_input, y=self.y, y_mat=self.y_mat)
+        self.fine_cost = softmax.get_cost(l_rate=0.5)
+        self.sa_layers.append(softmax)
+        self.thetas.extend(softmax.theta)
 
         return pre_train_fns
 
-    def train_model(self, datasets=None, pre_epochs=50, pre_lr=0.001, tr_epochs=1000, batch_size=100):
+    def fine_tuning(self, datasets, batch_size, learning_rate):
+        (train_set_x, train_set_y) = datasets[0]
+        (valid_set_x, valid_set_y) = datasets[1]
+        (test_set_x, test_set_y) = datasets[2]
+        train_y_mat,valid_y_mat,test_y_mat = datasets[3]
+
+        n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
+        n_valid_batches /= batch_size
+        n_test_batches = test_set_x.get_value(borrow=True).shape[0]
+        n_test_batches /= batch_size
+
+
+        index = T.lscalar('index')  # index to a [mini]batch
+
+        softmax = self.sa_layers[-1]
+
+        gparams = T.grad(self.fine_cost, self.thetas)
+
+        updates = [(param, param - gparam*learning_rate)
+                   for param, gparam in zip(self.thetas,gparams)]
+
+        fine_tuen_fn = function(inputs=[index],outputs=self.fine_cost, updates=updates, givens={
+            self.x: train_set_x[index * self.batch_size: (index+1) * self.batch_size],
+            self.y: train_set_y[index * self.batch_size: (index+1) * self.batch_size],
+            self.y_mat: train_y_mat[index * self.batch_size: (index+1) * self.batch_size,:]
+        })
+
+        return fine_tuen_fn
+
+    def train_model(self, datasets=None, pre_epochs=10, pre_lr=0.001, tr_epochs=1000, batch_size=100):
 
         (train_set_x, train_set_y) = datasets[0]
         (valid_set_x, valid_set_y) = datasets[1]
         (test_set_x, test_set_y) = datasets[2]
-        y_mat = datasets[3]
+        train_y_mat,valid_y_mat,test_y_mat = datasets[3]
 
         n_train_batches = train_set_x.get_value(borrow=True).shape[0] / self.batch_size
 
-        pre_train_fns = self.greedy_pre_training(train_set_x,train_set_y,y_mat)
+        pre_train_fns = self.greedy_pre_training(train_set_x,train_set_y,train_y_mat)
 
         start_time = time.clock()
         for i in xrange(self.n_layers):
@@ -141,6 +176,15 @@ class StackedAutoencoder(object):
 
             print "Training time: %f" %training_time
 
+        print "Fine tuning..."
+
+        fine_tune_fn = self.fine_tuning(datasets,100,0.5)
+        for epoch in range(pre_epochs):
+            c=[]
+            for batch_index in xrange(n_train_batches):
+                c.append(fine_tune_fn(batch_index))
+
+            print 'Training epoch %d, cost ' % epoch, np.mean(c)
     def mkdir_if_not_exist(self, name):
         if not os.path.exists(name):
             os.makedirs(name)
