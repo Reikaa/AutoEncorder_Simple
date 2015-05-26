@@ -75,9 +75,9 @@ class SparseAutoencoder(object):
 
         a2,a3 = self.forward_pass()
 
-        L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
-        cost = T.mean(L)
-        #cost = T.mean(0.5 * T.sum(T.sqr(a3-self.input), axis=1))
+        #L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
+        #cost = T.mean(L)
+        cost = T.mean(0.5 * T.sum(T.sqr(a3-self.input), axis=1))
 
         gparams = T.grad(cost, self.theta)
 

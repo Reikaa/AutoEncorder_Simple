@@ -33,14 +33,14 @@ class SoftmaxClassifier(object):
             self.b1 = shared(value=b1, name = 'b1', borrow=True)
 
         #Remember! These are symbolic experessions.
-        self.a = self.forward_pass(self.x)
+        self.a = self.forward_pass()
         self.pred = T.argmax(self.a, axis=1)
 
         self.theta = [self.W1,self.b1]
 
 
-    def forward_pass(self, input):
-        a = T.nnet.softmax(T.dot(input,self.W1) + self.b1)
+    def forward_pass(self):
+        a = T.nnet.softmax(T.dot(self.x, self.W1) + self.b1)
         return a
 
     def get_cost(self):
