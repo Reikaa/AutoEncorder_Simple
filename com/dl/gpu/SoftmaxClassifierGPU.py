@@ -32,23 +32,23 @@ class SoftmaxClassifier(object):
             b1 = np.random.random_sample((n_outputs,)) * 0.2
             self.b1 = shared(value=b1, name = 'b1', borrow=True)
 
+        #Remember! These are symbolic experessions.
+        self.a = self.forward_pass(self.x)
+        self.pred = T.argmax(self.a, axis=1)
+
         self.theta = [self.W1,self.b1]
 
 
-
-
     def forward_pass(self, input):
-
         a = T.nnet.softmax(T.dot(input,self.W1) + self.b1)
         return a
 
-    def get_cost(self, l_rate):
-
-        a = self.forward_pass(self.x)
-
-        cost = T.mean(0.5 * T.sum(T.sqr(a-self.y_mat), axis=1))
-
+    def get_cost(self):
+        cost = T.mean(0.5 * T.sum(T.sqr(self.a-self.y_mat), axis=1))
         return cost
 
     def get_params(self):
         return self.theta
+
+    def get_error(self):
+        return T.mean(T.neq(self.pred, self.y))

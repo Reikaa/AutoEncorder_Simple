@@ -36,12 +36,6 @@ class SparseAutoencoder(object):
         self.n_inputs = n_inputs
         self.n_outputs = n_inputs
 
-        self.lam = 0.0001
-        self.beta = 0.1
-        self.rho = 0.3
-
-        self.rho_nh = np.zeros((self.n_hidden,),dtype=np.float32)
-
         #generate random weights for W
         if W1 == None:
             val_range1 = [-math.sqrt(6.0/(n_inputs+n_hidden+1)), math.sqrt(6.0/(n_inputs+n_hidden+1))]
@@ -66,8 +60,8 @@ class SparseAutoencoder(object):
 
         self.theta = [self.W1,self.b1,self.W2,self.b2]
 
-    def forward_pass(self, input):
-        a2 = T.nnet.sigmoid(T.dot(input,self.W1) + self.b1)
+    def forward_pass(self):
+        a2 = T.nnet.sigmoid(T.dot(self.input,self.W1) + self.b1)
 
         a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
         return a2, a3
@@ -79,10 +73,11 @@ class SparseAutoencoder(object):
     # Theta will be the input that the optimization method trying to optimize
     def get_cost_and_weight_update(self, l_rate):
 
-        a2,a3 = self.forward_pass(self.input)
+        a2,a3 = self.forward_pass()
 
-        #cost = - T.sum(self.x * T.log(a3) + (1 - self.x) * T.log(1 - a3), axis=1)
-        cost = T.mean(0.5 * T.sum(T.sqr(a3-self.input), axis=1))
+        L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
+        cost = T.mean(L)
+        #cost = T.mean(0.5 * T.sum(T.sqr(a3-self.input), axis=1))
 
         gparams = T.grad(cost, self.theta)
 
@@ -97,7 +92,10 @@ class SparseAutoencoder(object):
         return cost, updates
 
     def get_params(self):
-        return self.theta
+        return [self.W1, self.b1]
+
+    def get_hidden_act(self):
+        return T.nnet.sigmoid(T.dot(self.input,self.W1) + self.b1)
 
 #this calls the __init__ method automatically
 #dA = SparseAutoEncoder()
