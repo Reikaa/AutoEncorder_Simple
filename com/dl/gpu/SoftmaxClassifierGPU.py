@@ -25,12 +25,12 @@ class SoftmaxClassifier(object):
         #generate random weights for W
         if W1 == None:
             W1 = np.random.random_sample((n_inputs,n_outputs))*0.2
-            self.W1 = shared(value=W1, name = 'W1', borrow=True)
+            self.W1 = shared(value=W1, name='W1', borrow=True)
 
         #by introducing *0.05 to b1 initialization got an error dropoff from 360 -> 280
         if b1 == None:
             b1 = np.random.random_sample((n_outputs,)) * 0.2
-            self.b1 = shared(value=b1, name = 'b1', borrow=True)
+            self.b1 = shared(value=b1, name='b1', borrow=True)
 
         #Remember! These are symbolic experessions.
         self.a = self.forward_pass()
@@ -43,12 +43,16 @@ class SoftmaxClassifier(object):
         a = T.nnet.softmax(T.dot(self.x, self.W1) + self.b1)
         return a
 
-    def get_cost(self):
-        cost = T.mean(0.5 * T.sum(T.sqr(self.a-self.y_mat), axis=1))
+    def get_cost(self,y_mat):
+
+        #This cost function is faulty. It's causing the error to go up
+        #instead of reducing
+        cost = -T.mean(T.log(self.a[T.arange(self.y.shape[0]), self.y]))
         return cost
+        #return -T.mean(T.log(self.a)[T.arange(self.y.shape[0]), self.y])
 
     def get_params(self):
         return self.theta
 
-    def get_error(self):
-        return T.mean(T.neq(self.pred, self.y))
+    def get_error(self,y):
+        return T.mean(T.neq(self.pred, y))

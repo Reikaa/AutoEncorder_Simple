@@ -15,6 +15,7 @@ import time
 
 class StackedAutoencoder(object):
 
+
     def __init__(self,in_size=28**2, hidden_size = [500, 500, 250], out_size = 10, batch_size = 100):
         self.i_size = in_size
         self.h_sizes = hidden_size
@@ -58,11 +59,11 @@ class StackedAutoencoder(object):
         self.sa_activations.append(a2)
 
         self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y, y_mat=self.y_mat)
-        self.fine_cost = self.softmax.get_cost()
+        self.fine_cost = self.softmax.get_cost(self.y_mat)
         self.thetas.extend(self.softmax.theta)
         self.softmax_out = self.softmax.forward_pass()
         #measure test performance
-        self.error = self.softmax.get_error()
+        self.error = self.softmax.get_error(self.y)
 
     def load_data(self):
 
@@ -132,8 +133,6 @@ class StackedAutoencoder(object):
         (test_set_x, test_set_y) = datasets[2]
         train_y_mat,valid_y_mat,test_y_mat = datasets[3]
 
-        print train_y_mat.get_value()
-
         index = T.lscalar('index')  # index to a [mini]batch
 
         gparams = T.grad(self.fine_cost, self.thetas)
@@ -141,14 +140,15 @@ class StackedAutoencoder(object):
         updates = [(param, param - gparam*learning_rate)
                    for param, gparam in zip(self.thetas,gparams)]
 
-        fine_tuen_fn = function(inputs=[index],outputs=[self.fine_cost,self.softmax_out], updates=updates, givens={
+        fine_tuen_fn = function(inputs=[index],outputs=[self.fine_cost, self.error, self.softmax_out,self.softmax.pred,self.softmax.y], updates=updates, givens={
             self.x: train_set_x[index * self.batch_size: (index+1) * self.batch_size],
-            self.y_mat: train_y_mat[index * self.batch_size: (index+1) * self.batch_size]
+            #self.y_mat : train_y_mat[index * self.batch_size: (index+1) * self.batch_size],
+            self.y: train_set_y[index * self.batch_size: (index+1) * self.batch_size]
         })
 
         return fine_tuen_fn
 
-    def train_model(self, datasets=None, pre_epochs=3, fine_epochs=10, pre_lr=0.001, tr_epochs=1000, batch_size=1):
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=10, pre_lr=0.001, tr_epochs=1000, batch_size=1):
 
         (train_set_x, train_set_y) = datasets[0]
         (valid_set_x, valid_set_y) = datasets[1]
@@ -181,22 +181,27 @@ class StackedAutoencoder(object):
         fine_tune_fn = self.fine_tuning(datasets,batch_size=self.batch_size)
         for epoch in xrange(fine_epochs):
             c=[]
+            e=[]
             for batch_index in xrange(n_train_batches):
-                cost, out = fine_tune_fn(batch_index)
+                cost, err, out, pred, act_y  = fine_tune_fn(batch_index)
                 c.append(cost)
+                e.append(err)
 
             print 'Training epoch %d, cost ' % epoch,
-            print np.mean(c)
+            print np.mean(c),
+            print 'Error ',
+            print np.mean(e)
 
     def test_model(self,test_set_x,test_set_y,batch_size= 1):
 
+        print 'Testing the model...'
         n_test_batches = test_set_x.get_value(borrow=True).shape[0] / batch_size
 
         index = T.lscalar('index')
 
         #no update parameters, so this just returns the values it calculate
         #without objetvie function minimization
-        test_fn = function(inputs=[index], outputs=self.error, givens={
+        test_fn = function(inputs=[index], outputs=[self.error,self.softmax_out,self.softmax.pred,self.softmax.y], givens={
             self.x: test_set_x[
                 index * batch_size: (index + 1) * batch_size
             ],
@@ -207,8 +212,8 @@ class StackedAutoencoder(object):
 
         e=[]
         for batch_index in xrange(n_test_batches):
-            e.append(test_fn(batch_index))
-
+            err, out, pred, act_y = test_fn(batch_index)
+            e.append(err)
 
         print 'Test Error %f ' % np.mean(e)
 
@@ -220,5 +225,5 @@ class StackedAutoencoder(object):
 sae = StackedAutoencoder()
 all_data = sae.load_data()
 sae.train_model(datasets=all_data, batch_size=sae.batch_size)
-sae.test_model(all_data[2][0],all_data[2][1])
+sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
 #sae.save_hidden(sae.W3_1,"Hidden3")

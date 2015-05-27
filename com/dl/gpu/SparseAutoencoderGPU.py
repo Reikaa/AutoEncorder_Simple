@@ -13,13 +13,6 @@ import theano.tensor as T
 
 class SparseAutoencoder(object):
 
-
-    def kl_diverg(self,rho,rho_nh):
-        return rho*np.log(rho/rho_nh) + (1-rho)*np.log((1-rho)/(1-rho_nh))
-
-    def d_kl_diverg(self,rho,rho_nh):
-        return -(rho/rho_nh)+((1-rho)/(1-rho_nh))
-
     #the value specified in the argument for each variable is the default value
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
@@ -77,7 +70,8 @@ class SparseAutoencoder(object):
 
         #L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
         #cost = T.mean(L)
-        cost = T.mean(0.5 * T.sum(T.sqr(a3-self.input), axis=1))
+        L = 0.5 * T.sum(T.sqr(a3-self.input), axis=1)
+        cost = T.mean(L)
 
         gparams = T.grad(cost, self.theta)
 
