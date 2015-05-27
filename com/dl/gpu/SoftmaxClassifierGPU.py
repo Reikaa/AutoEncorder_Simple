@@ -12,11 +12,10 @@ class SoftmaxClassifier(object):
         return np.exp(x)
 
 
-    def __init__(self, n_inputs, n_outputs, x=None, y=None, y_mat=None, W1=None, b1=None):
+    def __init__(self, n_inputs, n_outputs, x=None, y=None, W1=None, b1=None):
 
         self.x = x
         self.y = y
-        self.y_mat = y_mat
 
         #define global variables for n_inputs and n_hidden
         self.n_inputs = n_inputs
@@ -43,9 +42,9 @@ class SoftmaxClassifier(object):
         a = T.nnet.softmax(T.dot(self.x, self.W1) + self.b1)
         return a
 
-    def get_cost(self,y_mat):
+    def get_cost(self):
 
-        #This cost function is faulty. It's causing the error to go up
+        #The previous cost function is faulty. It's causing the error to go up
         #instead of reducing
         cost = -T.mean(T.log(self.a[T.arange(self.y.shape[0]), self.y]))
         return cost

@@ -29,7 +29,6 @@ class StackedAutoencoder(object):
 
         self.x = T.matrix('x')
         self.y = T.ivector('y')
-        self.y_mat = T.matrix('y_mat')
 
         self.fine_cost = T.dscalar('fine_cost')
         self.error = T.dscalar('test_error')
@@ -58,8 +57,8 @@ class StackedAutoencoder(object):
         a2 = self.sa_layers[-1].get_hidden_act()
         self.sa_activations.append(a2)
 
-        self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y, y_mat=self.y_mat)
-        self.fine_cost = self.softmax.get_cost(self.y_mat)
+        self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y)
+        self.fine_cost = self.softmax.get_cost()
         self.thetas.extend(self.softmax.theta)
         self.softmax_out = self.softmax.forward_pass()
         #measure test performance
@@ -107,9 +106,10 @@ class StackedAutoencoder(object):
         pre_train_fns = []
         index = T.lscalar('index')
 
+        print "Compiling functions for DA layers..."
         for sa in self.sa_layers:
 
-            print "Compiling function..."
+
             cost, updates = sa.get_cost_and_weight_update(l_rate=0.1)
 
             #the givens section in this line set the self.x that we assign as input to the initial
@@ -140,7 +140,7 @@ class StackedAutoencoder(object):
         updates = [(param, param - gparam*learning_rate)
                    for param, gparam in zip(self.thetas,gparams)]
 
-        fine_tuen_fn = function(inputs=[index],outputs=[self.fine_cost, self.error, self.softmax_out,self.softmax.pred,self.softmax.y], updates=updates, givens={
+        fine_tuen_fn = function(inputs=[index],outputs=self.fine_cost, updates=updates, givens={
             self.x: train_set_x[index * self.batch_size: (index+1) * self.batch_size],
             #self.y_mat : train_y_mat[index * self.batch_size: (index+1) * self.batch_size],
             self.y: train_set_y[index * self.batch_size: (index+1) * self.batch_size]
@@ -181,16 +181,13 @@ class StackedAutoencoder(object):
         fine_tune_fn = self.fine_tuning(datasets,batch_size=self.batch_size)
         for epoch in xrange(fine_epochs):
             c=[]
-            e=[]
             for batch_index in xrange(n_train_batches):
-                cost, err, out, pred, act_y  = fine_tune_fn(batch_index)
+                cost = fine_tune_fn(batch_index)
                 c.append(cost)
-                e.append(err)
 
             print 'Training epoch %d, cost ' % epoch,
-            print np.mean(c),
-            print 'Error ',
-            print np.mean(e)
+            print np.mean(c)
+
 
     def test_model(self,test_set_x,test_set_y,batch_size= 1):
 
