@@ -64,14 +64,16 @@ class SparseAutoencoder(object):
     # at the moment I am using the squared error between the reconstructed and the input
     # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
     # Theta will be the input that the optimization method trying to optimize
-    def get_cost_and_weight_update(self, l_rate, lam):
+    def get_cost_and_updates(self, l_rate, lam, cost_fn='sqr_err'):
 
         a2,a3 = self.forward_pass()
 
-        #L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
-        #cost = T.mean(L)
-        L = 0.5 * T.sum(T.sqr(a3-self.input), axis=1)
-        cost = T.mean(L) + (lam/2)*0.0
+        if cost_fn == 'sqr_err':
+            L = 0.5 * T.sum(T.sqr(a3-self.input), axis=1)
+            cost = T.mean(L) + (lam/2)*0.0
+        elif cost_fn == 'neg_log':
+            L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
+            cost = T.mean(L) + (lam/2)*0.0
 
         gparams = T.grad(cost, self.theta)
 

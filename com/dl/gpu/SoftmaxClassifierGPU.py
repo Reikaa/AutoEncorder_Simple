@@ -42,14 +42,14 @@ class SoftmaxClassifier(object):
         a = T.nnet.softmax(T.dot(self.x, self.W1) + self.b1)
         return a
 
-    def get_cost(self,lam):
+    def get_cost(self,lam,cost_fn='neg_log'):
 
         #The previous cost function is faulty. It's causing the error to go up
         #instead of reducing
-        cost = -T.mean(T.log(self.a[T.arange(self.y.shape[0]), self.y])) + lam * 0.
+        if cost_fn=='neg_log':
+            cost = -T.mean(T.log(self.a[T.arange(self.y.shape[0]), self.y])) + lam * 0.
 
         return cost
-        #return -T.mean(T.log(self.a)[T.arange(self.y.shape[0]), self.y])
 
     def get_params(self):
         return self.theta

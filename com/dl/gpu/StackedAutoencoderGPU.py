@@ -30,6 +30,8 @@ class StackedAutoencoder(object):
         self.sa_activations = []
         self.thetas = []
 
+        self.cost_fn_names = ['sqr_err', 'neg_log']
+
         self.x = T.matrix('x')
         self.y = T.ivector('y')
 
@@ -67,7 +69,7 @@ class StackedAutoencoder(object):
 
         self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y)
         self.lam_fine_tune = T.scalar('lam')
-        self.fine_cost = self.softmax.get_cost(self.lam_fine_tune)
+        self.fine_cost = self.softmax.get_cost(self.lam_fine_tune,cost_fn=self.cost_fn_names[1])
 
         self.thetas.extend(self.softmax.theta)
         self.softmax_out = self.softmax.forward_pass()
@@ -75,10 +77,9 @@ class StackedAutoencoder(object):
         #measure test performance
         self.error = self.softmax.get_error(self.y)
 
-    def load_data(self):
+    def load_data(self,file_path='Data\\mnist.pkl.gz'):
 
-        dir_name = "Data"
-        f = gzip.open(dir_name+'\\mnist.pkl.gz', 'rb')
+        f = gzip.open(file_path, 'rb')
         train_set, valid_set, test_set = cPickle.load(f)
         f.close()
 
@@ -122,7 +123,7 @@ class StackedAutoencoder(object):
         for sa in self.sa_layers:
 
 
-            cost, updates = sa.get_cost_and_weight_update(l_rate=pre_lr, lam=lam)
+            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, cost_fn=self.cost_fn_names[0])
 
             #the givens section in this line set the self.x that we assign as input to the initial
             # curr_input value be a small batch rather than the full batch.
@@ -234,11 +235,12 @@ if __name__ == '__main__':
     #sys.argv[1:] is used to drop the first argument of argument list
     #because first argument is always the filename
     try:
-        opts,args = getopt.getopt(sys.argv[1:],"h:p:f:b:")
+        opts,args = getopt.getopt(sys.argv[1:],"h:p:f:b:d:")
     except getopt.GetoptError:
-        print '<filename>.py -h [<hidden values>] -p <pre-epochs> -f <fine-tuning-epochs> -b <batch_size>'
+        print '<filename>.py -h [<hidden values>] -p <pre-epochs> -f <fine-tuning-epochs> -b <batch_size> -d <data_folder>'
         sys.exit(2)
 
+    #when I run in command line
     if len(opts)!=0:
         for opt,arg in opts:
             if opt == '-h':
@@ -250,13 +252,18 @@ if __name__ == '__main__':
                 fine_ep = int(arg)
             elif opt == '-b':
                 b_size = int(arg)
+            elif opt == '-d':
+                data_dir = arg
+    #when I run in Pycharm
     else:
         hid = [500, 500, 500]
         pre_ep = 10
         fine_ep = 100
         b_size = 1
+        data_dir = 'Data\\mnist.pkl.gz'
+
     sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size)
-    all_data = sae.load_data()
+    all_data = sae.load_data(data_dir)
     sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size)
     sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
     #sae.save_hidden(sae.W3_1,"Hidden3")
