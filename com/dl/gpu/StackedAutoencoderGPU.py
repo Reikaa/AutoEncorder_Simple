@@ -9,9 +9,12 @@ from PIL import Image
 from numpy import linalg as LA
 from math import sqrt
 import gzip,cPickle
-from theano import function, config, shared, sandbox
+
+from theano import function, config, shared, sandbox, Param
 import theano.tensor as T
 import time
+
+import sys,getopt
 
 class StackedAutoencoder(object):
 
@@ -33,6 +36,11 @@ class StackedAutoencoder(object):
         self.fine_cost = T.dscalar('fine_cost')
         self.error = T.dscalar('test_error')
 
+        print "Network Info:"
+        print "Layers: %i" %self.n_layers
+        print "Layer sizes: ",
+        print self.h_sizes
+        print ""
         print "Building the model..."
 
         for i in xrange(self.n_layers):
@@ -58,16 +66,19 @@ class StackedAutoencoder(object):
         self.sa_activations.append(a2)
 
         self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y)
-        self.fine_cost = self.softmax.get_cost()
+        self.lam_fine_tune = T.scalar('lam')
+        self.fine_cost = self.softmax.get_cost(self.lam_fine_tune)
+
         self.thetas.extend(self.softmax.theta)
         self.softmax_out = self.softmax.forward_pass()
+
         #measure test performance
         self.error = self.softmax.get_error(self.y)
 
     def load_data(self):
 
         dir_name = "Data"
-        f = gzip.open('..\\..\\..\\'+dir_name+'\\mnist.pkl.gz', 'rb')
+        f = gzip.open(dir_name+'\\mnist.pkl.gz', 'rb')
         train_set, valid_set, test_set = cPickle.load(f)
         f.close()
 
@@ -101,16 +112,17 @@ class StackedAutoencoder(object):
 
         return all_data
 
-    def greedy_pre_training(self, train_x, batch_size=1):
+    def greedy_pre_training(self, train_x, batch_size=1, pre_lr=0.25):
 
         pre_train_fns = []
         index = T.lscalar('index')
+        lam = T.scalar('lam')
 
         print "Compiling functions for DA layers..."
         for sa in self.sa_layers:
 
 
-            cost, updates = sa.get_cost_and_weight_update(l_rate=0.1)
+            cost, updates = sa.get_cost_and_weight_update(l_rate=pre_lr, lam=lam)
 
             #the givens section in this line set the self.x that we assign as input to the initial
             # curr_input value be a small batch rather than the full batch.
@@ -119,7 +131,7 @@ class StackedAutoencoder(object):
             # corresponding to that small batch of inputs.
             # Therefore, setting self.x to be a mini-batch is enough to make all the subsequents use
             # hidden activations corresponding to that mini batch of self.x
-            sa_fn = function(inputs=[index], outputs=cost, updates=updates, givens={
+            sa_fn = function(inputs=[index, Param(lam, default=0.25)], outputs=cost, updates=updates, givens={
                 self.x: train_x[index * batch_size: (index+1) * batch_size]
                 }
             )
@@ -128,7 +140,7 @@ class StackedAutoencoder(object):
 
         return pre_train_fns
 
-    def fine_tuning(self, datasets, batch_size=1, learning_rate=0.05):
+    def fine_tuning(self, datasets, batch_size=1, learning_rate=0.3):
         (train_set_x, train_set_y) = datasets[0]
         (test_set_x, test_set_y) = datasets[2]
         train_y_mat,valid_y_mat,test_y_mat = datasets[3]
@@ -140,7 +152,7 @@ class StackedAutoencoder(object):
         updates = [(param, param - gparam*learning_rate)
                    for param, gparam in zip(self.thetas,gparams)]
 
-        fine_tuen_fn = function(inputs=[index],outputs=self.fine_cost, updates=updates, givens={
+        fine_tuen_fn = function(inputs=[index, Param(self.lam_fine_tune,default=0.25)],outputs=self.fine_cost, updates=updates, givens={
             self.x: train_set_x[index * self.batch_size: (index+1) * self.batch_size],
             #self.y_mat : train_y_mat[index * self.batch_size: (index+1) * self.batch_size],
             self.y: train_set_y[index * self.batch_size: (index+1) * self.batch_size]
@@ -148,7 +160,7 @@ class StackedAutoencoder(object):
 
         return fine_tuen_fn
 
-    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=10, pre_lr=0.001, tr_epochs=1000, batch_size=1):
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=10, pre_lr=0.25, batch_size=1):
 
         (train_set_x, train_set_y) = datasets[0]
         (valid_set_x, valid_set_y) = datasets[1]
@@ -157,7 +169,7 @@ class StackedAutoencoder(object):
 
         n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
 
-        pre_train_fns = self.greedy_pre_training(train_set_x, batch_size=self.batch_size)
+        pre_train_fns = self.greedy_pre_training(train_set_x, batch_size=self.batch_size,pre_lr=pre_lr)
 
         start_time = time.clock()
         for i in xrange(self.n_layers):
@@ -166,7 +178,7 @@ class StackedAutoencoder(object):
             for epoch in xrange(pre_epochs):
                 c=[]
                 for batch_index in xrange(n_train_batches):
-                    c.append(pre_train_fns[i](batch_index))
+                    c.append(pre_train_fns[i](index=batch_index, lam=0.2))
 
                 print 'Training epoch %d, cost ' % epoch,
                 print np.mean(c)
@@ -182,7 +194,7 @@ class StackedAutoencoder(object):
         for epoch in xrange(fine_epochs):
             c=[]
             for batch_index in xrange(n_train_batches):
-                cost = fine_tune_fn(batch_index)
+                cost = fine_tune_fn(index=batch_index,lam=0.2)
                 c.append(cost)
 
             print 'Training epoch %d, cost ' % epoch,
@@ -218,9 +230,33 @@ class StackedAutoencoder(object):
         if not os.path.exists(name):
             os.makedirs(name)
 
+if __name__ == '__main__':
+    #sys.argv[1:] is used to drop the first argument of argument list
+    #because first argument is always the filename
+    try:
+        opts,args = getopt.getopt(sys.argv[1:],"h:p:f:b:")
+    except getopt.GetoptError:
+        print '<filename>.py -h [<hidden values>] -p <pre-epochs> -f <fine-tuning-epochs> -b <batch_size>'
+        sys.exit(2)
 
-sae = StackedAutoencoder()
-all_data = sae.load_data()
-sae.train_model(datasets=all_data, batch_size=sae.batch_size)
-sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
-#sae.save_hidden(sae.W3_1,"Hidden3")
+    if len(opts)!=0:
+        for opt,arg in opts:
+            if opt == '-h':
+                hid_str = arg
+                hid = [int(s.strip()) for s in hid_str.split(',')]
+            elif opt == '-p':
+                pre_ep = int(arg)
+            elif opt == '-f':
+                fine_ep = int(arg)
+            elif opt == '-b':
+                b_size = int(arg)
+    else:
+        hid = [500, 500, 500]
+        pre_ep = 10
+        fine_ep = 100
+        b_size = 1
+    sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size)
+    all_data = sae.load_data()
+    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size)
+    sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
+    #sae.save_hidden(sae.W3_1,"Hidden3")
