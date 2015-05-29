@@ -16,6 +16,13 @@ import time
 
 import sys,getopt
 
+from utils import tile_raster_images
+
+try:
+    import PIL.Image as Image
+except ImportError:
+    import Image
+
 class StackedAutoencoder(object):
 
 
@@ -119,7 +126,7 @@ class StackedAutoencoder(object):
         index = T.lscalar('index')
         lam = T.scalar('lam')
 
-        print "Compiling functions for DA layers..."
+        print "\nCompiling functions for DA layers..."
         for sa in self.sa_layers:
 
 
@@ -175,7 +182,7 @@ class StackedAutoencoder(object):
         start_time = time.clock()
         for i in xrange(self.n_layers):
 
-            print "Pretraining layer %i" %i
+            print "\nPretraining layer %i" %i
             for epoch in xrange(pre_epochs):
                 c=[]
                 for batch_index in xrange(n_train_batches):
@@ -189,7 +196,7 @@ class StackedAutoencoder(object):
 
             print "Training time: %f" %training_time
 
-        print "Fine tuning..."
+        print "\nFine tuning..."
 
         fine_tune_fn = self.fine_tuning(datasets,batch_size=self.batch_size)
         for epoch in xrange(fine_epochs):
@@ -204,7 +211,7 @@ class StackedAutoencoder(object):
 
     def test_model(self,test_set_x,test_set_y,batch_size= 1):
 
-        print 'Testing the model...'
+        print '\nTesting the model...'
         n_test_batches = test_set_x.get_value(borrow=True).shape[0] / batch_size
 
         index = T.lscalar('index')
@@ -231,6 +238,24 @@ class StackedAutoencoder(object):
         if not os.path.exists(name):
             os.makedirs(name)
 
+    def visualize_hidden(self):
+        print '\nSaving hidden layer filters...'
+        i=0
+        for sa in self.sa_layers:
+            f_name = 'filter_layer_' + str(i) + '.png'
+            if i==0:
+                im_side = sqrt(self.i_size)
+            else:
+                im_side = sqrt(self.h_sizes[i-1])
+            im_count = int(sqrt(self.h_sizes[i]))
+            image = Image.fromarray(tile_raster_images(
+            X=sa.W1.get_value(borrow=True).T,
+            img_shape=(im_side, im_side), tile_shape=(im_count, im_count),
+            tile_spacing=(1, 1)))
+            image.save(f_name)
+            i += 1
+
+
 if __name__ == '__main__':
     #sys.argv[1:] is used to drop the first argument of argument list
     #because first argument is always the filename
@@ -256,14 +281,14 @@ if __name__ == '__main__':
                 data_dir = arg
     #when I run in Pycharm
     else:
-        hid = [500, 500, 500]
-        pre_ep = 10
-        fine_ep = 100
-        b_size = 1
+        hid = [400, 225, 100]
+        pre_ep = 5
+        fine_ep = 10
+        b_size = 50
         data_dir = 'Data\\mnist.pkl.gz'
 
     sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size)
     all_data = sae.load_data(data_dir)
     sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size)
     sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
-    #sae.save_hidden(sae.W3_1,"Hidden3")
+    sae.visualize_hidden()
