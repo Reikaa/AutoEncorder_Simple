@@ -26,11 +26,12 @@ except ImportError:
 class StackedAutoencoder(object):
 
 
-    def __init__(self,in_size=28**2, hidden_size = [500, 500, 250], out_size = 10, batch_size = 100):
+    def __init__(self,in_size=28**2, hidden_size = [500, 500, 250], out_size = 10, batch_size = 100, corruption_levels=[0.1, 0.1, 0.1]):
         self.i_size = in_size
         self.h_sizes = hidden_size
         self.o_size = out_size
         self.batch_size = batch_size
+        self.corruption_levels = corruption_levels
 
         self.n_layers = len(hidden_size)
         self.sa_layers = []
@@ -84,6 +85,7 @@ class StackedAutoencoder(object):
         #measure test performance
         self.error = self.softmax.get_error(self.y)
 
+
     def load_data(self,file_path='Data\\mnist.pkl.gz'):
 
         f = gzip.open(file_path, 'rb')
@@ -126,11 +128,12 @@ class StackedAutoencoder(object):
         index = T.lscalar('index')
         lam = T.scalar('lam')
 
+        i = 0
         print "\nCompiling functions for DA layers..."
         for sa in self.sa_layers:
 
 
-            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, cost_fn=self.cost_fn_names[0])
+            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, cost_fn=self.cost_fn_names[0], corruption_level=self.corruption_levels[i])
 
             #the givens section in this line set the self.x that we assign as input to the initial
             # curr_input value be a small batch rather than the full batch.
@@ -145,10 +148,11 @@ class StackedAutoencoder(object):
             )
 
             pre_train_fns.append(sa_fn)
+            i = i+1
 
         return pre_train_fns
 
-    def fine_tuning(self, datasets, batch_size=1, learning_rate=0.3):
+    def fine_tuning(self, datasets, batch_size=1, learning_rate=0.2):
         (train_set_x, train_set_y) = datasets[0]
         (test_set_x, test_set_y) = datasets[2]
         train_y_mat,valid_y_mat,test_y_mat = datasets[3]
@@ -162,13 +166,12 @@ class StackedAutoencoder(object):
 
         fine_tuen_fn = function(inputs=[index, Param(self.lam_fine_tune,default=0.25)],outputs=self.fine_cost, updates=updates, givens={
             self.x: train_set_x[index * self.batch_size: (index+1) * self.batch_size],
-            #self.y_mat : train_y_mat[index * self.batch_size: (index+1) * self.batch_size],
             self.y: train_set_y[index * self.batch_size: (index+1) * self.batch_size]
         })
 
         return fine_tuen_fn
 
-    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=10, pre_lr=0.25, batch_size=1):
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.1, batch_size=1, lam=0.5):
 
         (train_set_x, train_set_y) = datasets[0]
         (valid_set_x, valid_set_y) = datasets[1]
@@ -186,7 +189,7 @@ class StackedAutoencoder(object):
             for epoch in xrange(pre_epochs):
                 c=[]
                 for batch_index in xrange(n_train_batches):
-                    c.append(pre_train_fns[i](index=batch_index, lam=0.2))
+                    c.append(pre_train_fns[i](index=batch_index, lam=lam))
 
                 print 'Training epoch %d, cost ' % epoch,
                 print np.mean(c)
@@ -202,7 +205,7 @@ class StackedAutoencoder(object):
         for epoch in xrange(fine_epochs):
             c=[]
             for batch_index in xrange(n_train_batches):
-                cost = fine_tune_fn(index=batch_index,lam=0.2)
+                cost = fine_tune_fn(index=batch_index,lam=lam)
                 c.append(cost)
 
             print 'Training epoch %d, cost ' % epoch,
@@ -238,22 +241,47 @@ class StackedAutoencoder(object):
         if not os.path.exists(name):
             os.makedirs(name)
 
-    def visualize_hidden(self):
+    def visualize_hidden(self,threshold):
         print '\nSaving hidden layer filters...'
-        i=0
-        for sa in self.sa_layers:
-            f_name = 'filter_layer_' + str(i) + '.png'
-            if i==0:
-                im_side = sqrt(self.i_size)
-            else:
-                im_side = sqrt(self.h_sizes[i-1])
+
+        #Visualizing 1st hidden layer
+        f_name = 'filter_layer_0.png'
+        im_side = sqrt(self.i_size)
+        im_count = int(sqrt(self.h_sizes[0]))
+        image = Image.fromarray(tile_raster_images(
+        X=self.sa_layers[0].W1.get_value(borrow=True).T,
+        img_shape=(im_side, im_side), tile_shape=(im_count, im_count),
+        tile_spacing=(1, 1)))
+        image.save(f_name)
+
+        index = T.lscalar('index')
+        max_inputs =[]
+        #Higher level hidden layers
+        for i in xrange(1,self.n_layers):
+            print "Saving visualization for higher layers"
+            inp = np.random.random_sample((self.h_sizes[i-1]))*0.02
+            inp = np.asarray(inp,dtype=config.floatX)
+            input = shared(value=inp, name='input',borrow=True)
+
+            max_ins = self.sa_layers[i].get_max_activations(input,threshold)
+
+            max_inputs.append(max_ins)
+
+
+        for i in xrange(1,self.n_layers):
+            f_name = 'filter_layer_'+str(i)+'.png'
+            im_side = sqrt(self.h_sizes[i-1])
             im_count = int(sqrt(self.h_sizes[i]))
             image = Image.fromarray(tile_raster_images(
-            X=sa.W1.get_value(borrow=True).T,
-            img_shape=(im_side, im_side), tile_shape=(im_count, im_count),
-            tile_spacing=(1, 1)))
+                X=max_inputs[i-1],
+                img_shape=(im_side, im_side), tile_shape=(im_count, im_count),
+                tile_spacing=(1, 1)))
             image.save(f_name)
-            i += 1
+
+    def get_input_threshold(self,train_set_x):
+        mean_input = np.mean(np.sqrt(np.sum(train_set_x.get_value()**2,axis=1)))
+        return mean_input
+
 
 
 if __name__ == '__main__':
@@ -281,14 +309,16 @@ if __name__ == '__main__':
                 data_dir = arg
     #when I run in Pycharm
     else:
-        hid = [400, 225, 100]
+        hid = [400,400,400]
         pre_ep = 5
         fine_ep = 10
-        b_size = 50
+        b_size = 100
         data_dir = 'Data\\mnist.pkl.gz'
 
-    sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size)
+    corr_level = [0.3, 0.2, 0.1]
+    sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size, corruption_levels=corr_level)
     all_data = sae.load_data(data_dir)
-    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size)
+    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=0.001)
     sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
-    sae.visualize_hidden()
+    mean_inp = sae.get_input_threshold(all_data[0][0])
+    #sae.visualize_hidden(mean_inp)

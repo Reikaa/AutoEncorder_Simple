@@ -47,7 +47,8 @@ class SoftmaxClassifier(object):
         #The previous cost function is faulty. It's causing the error to go up
         #instead of reducing
         if cost_fn=='neg_log':
-            cost = -T.mean(T.log(self.a[T.arange(self.y.shape[0]), self.y])) + lam * 0.
+            cost = -T.mean(T.log(self.a[T.arange(self.y.shape[0]), self.y])) + \
+                   (lam/2) * T.sum(T.sum(self.W1**2,axis=1))
 
         return cost
 

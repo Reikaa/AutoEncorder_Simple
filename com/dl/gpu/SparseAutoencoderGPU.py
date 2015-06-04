@@ -10,6 +10,7 @@ from numpy import linalg as LA
 from PIL import Image
 from theano import function, config, shared, sandbox
 import theano.tensor as T
+from theano.tensor.shared_randomstreams import RandomStreams
 
 class SparseAutoencoder(object):
 
@@ -28,6 +29,9 @@ class SparseAutoencoder(object):
         self.n_hidden = n_hidden
         self.n_inputs = n_inputs
         self.n_outputs = n_inputs
+
+        numpy_rng = np.random.RandomState(89677)
+        self.theano_rng = RandomStreams(numpy_rng.randint(2 ** 30))
 
         #generate random weights for W
         if W1 == None:
@@ -59,20 +63,25 @@ class SparseAutoencoder(object):
         a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
         return a2, a3
 
+    def get_corrupted_input(self,input,corruption_level=0.3):
+        return self.theano_rng.binomial(size=input.shape, n=1,
+                                        p=1 - corruption_level,
+                                        dtype=config.floatX) * input
 
     # cost calculate the cost you get given all the inputs feed forward through the network
     # at the moment I am using the squared error between the reconstructed and the input
     # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
     # Theta will be the input that the optimization method trying to optimize
-    def get_cost_and_updates(self, l_rate, lam, cost_fn='sqr_err'):
+    def get_cost_and_updates(self, l_rate, lam, cost_fn='sqr_err',corruption_level=0.3):
 
         a2,a3 = self.forward_pass()
-
+        corr_input = self.get_corrupted_input(self.input,corruption_level)
         if cost_fn == 'sqr_err':
-            L = 0.5 * T.sum(T.sqr(a3-self.input), axis=1)
-            cost = T.mean(L) + (lam/2)*0.0
+            L = 0.5 * T.sum(T.sqr(a3-corr_input), axis=1)
+            cost = T.mean(L) + \
+                   (lam/2)*(T.sum(T.sum(self.W1**2,axis=1)) + T.sum(T.sum(self.W2**2,axis=1)))
         elif cost_fn == 'neg_log':
-            L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
+            L = - T.sum(self.input * T.log(a3) + (1 - corr_input) * T.log(1 - a3), axis=1)
             cost = T.mean(L) + (lam/2)*0.0
 
         gparams = T.grad(cost, self.theta)
@@ -92,6 +101,41 @@ class SparseAutoencoder(object):
 
     def get_hidden_act(self):
         return T.nnet.sigmoid(T.dot(self.input,self.W1) + self.b1)
+
+    def sigmoid(self, x):
+        return 1.0 / (1.0 + np.exp(-x))
+
+    def cost(self,input,W1,b1,index):
+        cost = self.sigmoid(np.dot(input,W1) + b1)[index]
+        return cost
+
+    def cost_prime(self,input,W1,b1,index):
+        prime = optimize.approx_fprime(input, self.cost, 0.00000001, W1, b1, index)
+        return prime
+
+    def get_max_activations(self,input,threshold):
+
+        print 'Calculating max activations...'
+        input_arr = input.get_value()
+        W1_arr = self.W1.get_value()
+        b1_arr = self.b1.get_value()
+        print input_arr.shape
+        max_inputs = []
+        for i in xrange(0,self.n_hidden):
+            inp = input_arr
+            #res = optimize.minimize(fun=self.cost, x0=init_val, args=(W1_arr, b1_arr, i),
+            #                        jac=self.cost_prime, method='L-BFGS-B', options={'maxiter': 100})
+            for epoch in xrange(0,50):
+                if np.sqrt(np.sum(input_arr**2)) > threshold:
+                    print "Threshold reached"
+                    break
+                prime = optimize.approx_fprime(inp, self.cost, 0.0000000001, W1_arr, b1_arr, i)
+                inp = inp + 0.5 * prime
+
+            max_inputs.append(inp)
+            #print "Cost hidden %i: %f" % (i, self.cost(inp,W1_arr,b1_arr,i))
+
+        return np.asarray(max_inputs)
 
 #this calls the __init__ method automatically
 #dA = SparseAutoEncoder()
