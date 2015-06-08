@@ -100,25 +100,13 @@ class StackedAutoencoder(object):
 
             return shared_x,T.cast(shared_y,'int32')
 
-        def get_vec_labels(y):
-            y_mat = []
-            for i in y:
-                y_i = y[i]
-                y_vec  = [0.0] * self.o_size
-                y_vec[y_i] = 1.0
-                y_mat.append(y_vec)
-
-            return shared(value=np.asarray(y_mat, dtype=config.floatX), name = 'y_mat', borrow=True)
 
         train_x,train_y = get_shared_data(train_set)
         valid_x,valid_y = get_shared_data(valid_set)
         test_x,test_y = get_shared_data(test_set)
 
-        train_y_mat = get_vec_labels(train_set[1])
-        valid_y_mat = get_vec_labels(valid_set[1])
-        test_y_mat = get_vec_labels(test_set[1])
 
-        all_data = [(train_x,train_y),(valid_x,valid_y),(test_x,test_y),(train_y_mat,valid_y_mat,test_y_mat)]
+        all_data = [(train_x,train_y),(valid_x,valid_y),(test_x,test_y)]
 
         return all_data
 
@@ -152,16 +140,19 @@ class StackedAutoencoder(object):
 
         return pre_train_fns
 
-    def fine_tuning(self, datasets, batch_size=1, learning_rate=0.2):
+    def fine_tuning(self, datasets, batch_size=1, fine_lr=0.2):
         (train_set_x, train_set_y) = datasets[0]
+        (valid_set_x, valid_set_y) = datasets[1]
         (test_set_x, test_set_y) = datasets[2]
-        train_y_mat,valid_y_mat,test_y_mat = datasets[3]
+
+        n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
+        n_valid_batches /= batch_size
 
         index = T.lscalar('index')  # index to a [mini]batch
 
         gparams = T.grad(self.fine_cost, self.thetas)
 
-        updates = [(param, param - gparam*learning_rate)
+        updates = [(param, param - gparam*fine_lr)
                    for param, gparam in zip(self.thetas,gparams)]
 
         fine_tuen_fn = function(inputs=[index, Param(self.lam_fine_tune,default=0.25)],outputs=self.fine_cost, updates=updates, givens={
@@ -169,18 +160,34 @@ class StackedAutoencoder(object):
             self.y: train_set_y[index * self.batch_size: (index+1) * self.batch_size]
         })
 
-        return fine_tuen_fn
+        validation_fn = function(inputs=[index],outputs=self.error, givens={
+            self.x: valid_set_x[index * batch_size: (index + 1) * batch_size],
+            self.y: valid_set_y[index * batch_size: (index + 1) * batch_size]
+        },name='valid')
 
-    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.1, batch_size=1, lam=0.5):
+        def valid_score():
+            return [validation_fn(i) for i in xrange(n_valid_batches)]
+        return fine_tuen_fn, valid_score
+
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.2, fine_lr=0.25, batch_size=1, lam=0.0001):
+
+        print "Training Info..."
+        print "Batch size: ",
+        print batch_size
+        print "Pre-training: %f (lr) %i (epochs)" %(pre_lr,pre_epochs)
+        print "Fine-tuning: %f (lr) %i (epochs)" %(fine_lr,fine_epochs)
+        print "Weight decay: ",
+        print lam
 
         (train_set_x, train_set_y) = datasets[0]
         (valid_set_x, valid_set_y) = datasets[1]
         (test_set_x, test_set_y) = datasets[2]
-        train_y_mat,valid_y_mat,test_y_mat = datasets[3]
 
         n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
 
         pre_train_fns = self.greedy_pre_training(train_set_x, batch_size=self.batch_size,pre_lr=pre_lr)
+
+        train_lam = lam/n_train_batches
 
         start_time = time.clock()
         for i in xrange(self.n_layers):
@@ -189,7 +196,7 @@ class StackedAutoencoder(object):
             for epoch in xrange(pre_epochs):
                 c=[]
                 for batch_index in xrange(n_train_batches):
-                    c.append(pre_train_fns[i](index=batch_index, lam=lam))
+                    c.append(pre_train_fns[i](index=batch_index, lam=train_lam))
 
                 print 'Training epoch %d, cost ' % epoch,
                 print np.mean(c)
@@ -199,9 +206,66 @@ class StackedAutoencoder(object):
 
             print "Training time: %f" %training_time
 
+        #########################################################################
+        #####                          Fine Tuning                          #####
+        #########################################################################
         print "\nFine tuning..."
 
-        fine_tune_fn = self.fine_tuning(datasets,batch_size=self.batch_size)
+        fine_tune_fn,valid_model = self.fine_tuning(datasets,batch_size=self.batch_size,fine_lr=fine_lr)
+
+        #########################################################################
+        #####                         Early-Stopping                        #####
+        #########################################################################
+        patience = 10 * n_train_batches # look at this many examples
+        patience_increase = 2.
+        improvement_threshold = 0.995
+        #validation frequency - the number of minibatches to go through before checking validation set
+        validation_freq = min(n_train_batches,patience/2)
+
+        #we want to minimize best_valid_loss, so we shoudl start with largest
+        best_valid_loss = np.inf
+        test_score = 0.
+
+        done_looping = False
+        epoch = 0
+
+        while epoch < fine_epochs and (not done_looping):
+            epoch = epoch + 1
+            fine_tune_cost = []
+            for mini_index in xrange(n_train_batches):
+                cost = fine_tune_fn(index=mini_index,lam=lam)
+                fine_tune_cost.append(cost)
+                #what's the role of iter? iter acts as follows
+                #in first epoch, iter for minibatch 'x' is x
+                #in second epoch, iter for minibatch 'x' is n_train_batches + x
+                #iter is the number of minibatches processed so far...
+                iter = (epoch-1) * n_train_batches + mini_index
+
+                # this is an operation done in cycles. 1 cycle is iter+1/validation_freq
+                # doing this every epoch
+                if (iter+1) % validation_freq == 0:
+                    validation_losses = valid_model()
+                    mean_valid_loss = np.mean(validation_losses)
+                    print 'epoch %i, minibatch %i/%i, validation error is %f %%' %(epoch, mini_index+1,n_train_batches,mean_valid_loss*100)
+
+                    if mean_valid_loss < best_valid_loss:
+
+                        if (
+                            mean_valid_loss < best_valid_loss * improvement_threshold
+                        ):
+                            patience = max(patience, iter * patience_increase)
+
+                        best_valid_loss = mean_valid_loss
+                        best_iter = iter
+
+            print 'Fine tune cost for epoch %i, is %f' %(epoch+1,np.mean(fine_tune_cost))
+            #patience is here to check the maximum number of iterations it should check
+            #before terminating
+            if patience <= iter:
+                done_looping = True
+                break
+
+        '''
         for epoch in xrange(fine_epochs):
             c=[]
             for batch_index in xrange(n_train_batches):
@@ -209,7 +273,7 @@ class StackedAutoencoder(object):
                 c.append(cost)
 
             print 'Training epoch %d, cost ' % epoch,
-            print np.mean(c)
+            print np.mean(c)'''
 
 
     def test_model(self,test_set_x,test_set_y,batch_size= 1):
@@ -221,7 +285,7 @@ class StackedAutoencoder(object):
 
         #no update parameters, so this just returns the values it calculate
         #without objetvie function minimization
-        test_fn = function(inputs=[index], outputs=[self.error,self.softmax_out,self.softmax.pred,self.softmax.y], givens={
+        test_fn = function(inputs=[index], outputs=[self.error], givens={
             self.x: test_set_x[
                 index * batch_size: (index + 1) * batch_size
             ],
@@ -232,7 +296,7 @@ class StackedAutoencoder(object):
 
         e=[]
         for batch_index in xrange(n_test_batches):
-            err, out, pred, act_y = test_fn(batch_index)
+            err = test_fn(batch_index)
             e.append(err)
 
         print 'Test Error %f ' % np.mean(e)
@@ -288,7 +352,7 @@ if __name__ == '__main__':
     #sys.argv[1:] is used to drop the first argument of argument list
     #because first argument is always the filename
     try:
-        opts,args = getopt.getopt(sys.argv[1:],"h:p:f:b:d:")
+        opts,args = getopt.getopt(sys.argv[1:],"h:p:f:b:d:",["w_decay=","early_stopping="])
     except getopt.GetoptError:
         print '<filename>.py -h [<hidden values>] -p <pre-epochs> -f <fine-tuning-epochs> -b <batch_size> -d <data_folder>'
         sys.exit(2)
@@ -307,9 +371,12 @@ if __name__ == '__main__':
                 b_size = int(arg)
             elif opt == '-d':
                 data_dir = arg
+            elif opt == '--w_decay':
+                lam = float(arg)
     #when I run in Pycharm
     else:
-        hid = [400,400,400]
+        lam = 0.0
+        hid = [400,400]
         pre_ep = 5
         fine_ep = 10
         b_size = 100
@@ -318,7 +385,7 @@ if __name__ == '__main__':
     corr_level = [0.3, 0.2, 0.1]
     sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size, corruption_levels=corr_level)
     all_data = sae.load_data(data_dir)
-    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=0.001)
+    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam)
     sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
     mean_inp = sae.get_input_threshold(all_data[0][0])
     #sae.visualize_hidden(mean_inp)

@@ -130,7 +130,7 @@ class SparseAutoencoder(object):
                     print "Threshold reached"
                     break
                 prime = optimize.approx_fprime(inp, self.cost, 0.0000000001, W1_arr, b1_arr, i)
-                inp = inp + 0.5 * prime
+                inp = inp + 1.5 * prime
 
             max_inputs.append(inp)
             #print "Cost hidden %i: %f" % (i, self.cost(inp,W1_arr,b1_arr,i))
