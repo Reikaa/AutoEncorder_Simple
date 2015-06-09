@@ -57,11 +57,25 @@ class SparseAutoencoder(object):
 
         self.theta = [self.W1,self.b1,self.W2,self.b2]
 
-    def forward_pass(self):
-        a2 = T.nnet.sigmoid(T.dot(self.input,self.W1) + self.b1)
+    def forward_pass(self,input=None,p=0.5,pre_training=False,dropout=True):
 
-        a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
+        if dropout:
+            srng = T.shared_randomstreams.RandomStreams(np.random.randint(999999))
+            mask = srng.binomial(n=1, p=1-p, size=(self.n_inputs,))
+
+            if pre_training:
+                input_tilda = input * mask
+                a2 = T.nnet.sigmoid(T.dot(input_tilda,self.W1) + self.b1)
+                a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
+            else:
+                a2 = T.nnet.sigmoid(T.dot(input,self.W1*p) + self.b1)
+                a3 = T.nnet.sigmoid(T.dot(a2,self.W2*p) + self.b2)
+        else:
+            a2 = T.nnet.sigmoid(T.dot(input,self.W1) + self.b1)
+            a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
+
         return a2, a3
+
 
     def get_corrupted_input(self,input,corruption_level=0.3):
         return self.theano_rng.binomial(size=input.shape, n=1,
@@ -72,10 +86,11 @@ class SparseAutoencoder(object):
     # at the moment I am using the squared error between the reconstructed and the input
     # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
     # Theta will be the input that the optimization method trying to optimize
-    def get_cost_and_updates(self, l_rate, lam, cost_fn='sqr_err',corruption_level=0.3):
+    def get_cost_and_updates(self, l_rate, lam, cost_fn='sqr_err',corruption_level=0.3,dropout=True):
 
-        a2,a3 = self.forward_pass()
         corr_input = self.get_corrupted_input(self.input,corruption_level)
+        a2,a3 = self.forward_pass(input=corr_input,p=0.5,pre_training=False,dropout=dropout)
+
         if cost_fn == 'sqr_err':
             L = 0.5 * T.sum(T.sqr(a3-corr_input), axis=1)
             cost = T.mean(L) + \

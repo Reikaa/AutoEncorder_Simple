@@ -12,7 +12,7 @@ class SoftmaxClassifier(object):
         return np.exp(x)
 
 
-    def __init__(self, n_inputs, n_outputs, x=None, y=None, W1=None, b1=None):
+    def __init__(self, n_inputs, n_outputs, x=None, y=None, W1=None, b1=None, dropout=True):
 
         self.x = x
         self.y = y
@@ -32,22 +32,35 @@ class SoftmaxClassifier(object):
             self.b1 = shared(value=b1, name='b1', borrow=True)
 
         #Remember! These are symbolic experessions.
-        self.a = self.forward_pass()
-        self.pred = T.argmax(self.a, axis=1)
+        self.a_train = self.forward_pass(training=True,dropout=dropout)
+        self.a_test = self.forward_pass(training=False,dropout=dropout)
+        self.pred = T.argmax(self.a_test, axis=1)
 
         self.theta = [self.W1,self.b1]
 
 
-    def forward_pass(self):
-        a = T.nnet.softmax(T.dot(self.x, self.W1) + self.b1)
+    def forward_pass(self,p=0.5,training=False,dropout=True):
+        if dropout:
+            srng = T.shared_randomstreams.RandomStreams(np.random.randint(999999))
+            mask = srng.binomial(n=1, p=1-p, size=(self.n_inputs,))
+            x_tilda = self.x * mask
+            if training:
+                a = T.nnet.softmax(T.dot(x_tilda, self.W1) + self.b1)
+            else:
+                a = T.nnet.softmax(T.dot(self.x, self.W1*p) + self.b1)
+
+        else:
+            a = T.nnet.softmax(T.dot(self.x, self.W1) + self.b1)
         return a
 
     def get_cost(self,lam,cost_fn='neg_log'):
 
         #The previous cost function is faulty. It's causing the error to go up
         #instead of reducing
-        if cost_fn=='neg_log':
-            cost = -T.mean(T.log(self.a[T.arange(self.y.shape[0]), self.y])) + \
+        if cost_fn=='sqr_err':
+            cost = 0
+        elif cost_fn=='neg_log':
+            cost = -T.mean(T.log(self.a_train[T.arange(self.y.shape[0]), self.y])) + \
                    (lam/2) * T.sum(T.sum(self.W1**2,axis=1))
 
         return cost
