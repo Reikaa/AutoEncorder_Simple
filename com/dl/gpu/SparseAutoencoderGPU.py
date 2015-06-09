@@ -86,17 +86,21 @@ class SparseAutoencoder(object):
     # at the moment I am using the squared error between the reconstructed and the input
     # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
     # Theta will be the input that the optimization method trying to optimize
-    def get_cost_and_updates(self, l_rate, lam, cost_fn='sqr_err',corruption_level=0.3,dropout=True):
+    def get_cost_and_updates(self, l_rate, lam, cost_fn='sqr_err',corruption_level=0.3,dropout=True,denoising=False):
 
-        corr_input = self.get_corrupted_input(self.input,corruption_level)
-        a2,a3 = self.forward_pass(input=corr_input,p=0.5,pre_training=False,dropout=dropout)
+        if denoising:
+            new_input = self.get_corrupted_input(self.input,corruption_level)
+        else:
+            new_input = self.input
+
+        a2,a3 = self.forward_pass(input=new_input,p=0.5,pre_training=False,dropout=dropout)
 
         if cost_fn == 'sqr_err':
-            L = 0.5 * T.sum(T.sqr(a3-corr_input), axis=1)
+            L = 0.5 * T.sum(T.sqr(a3-new_input), axis=1)
             cost = T.mean(L) + \
                    (lam/2)*(T.sum(T.sum(self.W1**2,axis=1)) + T.sum(T.sum(self.W2**2,axis=1)))
         elif cost_fn == 'neg_log':
-            L = - T.sum(self.input * T.log(a3) + (1 - corr_input) * T.log(1 - a3), axis=1)
+            L = - T.sum(self.input * T.log(a3) + (1 - new_input) * T.log(1 - a3), axis=1)
             cost = T.mean(L) + (lam/2)*0.0
 
         gparams = T.grad(cost, self.theta)

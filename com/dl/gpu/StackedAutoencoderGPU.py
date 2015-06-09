@@ -110,7 +110,7 @@ class StackedAutoencoder(object):
 
         return all_data
 
-    def greedy_pre_training(self, train_x, batch_size=1, pre_lr=0.25,dropout=True):
+    def greedy_pre_training(self, train_x, batch_size=1, pre_lr=0.25,dropout=True,denoising=False):
 
         pre_train_fns = []
         index = T.lscalar('index')
@@ -121,7 +121,7 @@ class StackedAutoencoder(object):
         for sa in self.sa_layers:
 
 
-            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, cost_fn=self.cost_fn_names[1], corruption_level=self.corruption_levels[i],dropout=dropout)
+            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, cost_fn=self.cost_fn_names[1], corruption_level=self.corruption_levels[i],dropout=dropout,denoising=denoising)
 
             #the givens section in this line set the self.x that we assign as input to the initial
             # curr_input value be a small batch rather than the full batch.
@@ -169,14 +169,15 @@ class StackedAutoencoder(object):
             return [validation_fn(i) for i in xrange(n_valid_batches)]
         return fine_tuen_fn, valid_score
 
-    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.2, fine_lr=0.25, batch_size=1, lam=0.0001,dropout=True):
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.2, fine_lr=0.25, batch_size=1, lam=0.0001,dropout=True, denoising=False):
 
         print "Training Info..."
         print "Batch size: ",
         print batch_size
         print "Pre-training: %f (lr) %i (epochs)" %(pre_lr,pre_epochs)
         print "Fine-tuning: %f (lr) %i (epochs)" %(fine_lr,fine_epochs)
-        print "Corruption levels: ",
+        print "Corruption: ",
+        print denoising,
         print self.corruption_levels
         print "Weight decay: ",
         print lam
@@ -189,7 +190,7 @@ class StackedAutoencoder(object):
 
         n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
 
-        pre_train_fns = self.greedy_pre_training(train_set_x, batch_size=self.batch_size,pre_lr=pre_lr,dropout=dropout)
+        pre_train_fns = self.greedy_pre_training(train_set_x, batch_size=self.batch_size,pre_lr=pre_lr,dropout=dropout,denoising=denoising)
 
         train_lam = lam/n_train_batches
 
@@ -356,13 +357,18 @@ if __name__ == '__main__':
     #sys.argv[1:] is used to drop the first argument of argument list
     #because first argument is always the filename
     try:
-        opts,args = getopt.getopt(sys.argv[1:],"h:p:f:b:d:",["w_decay=","early_stopping=","dropout="])
+        opts,args = getopt.getopt(sys.argv[1:],"h:p:f:b:d:",["w_decay=","early_stopping=","dropout=","corruption="])
     except getopt.GetoptError:
         print '<filename>.py -h [<hidden values>] -p <pre-epochs> -f <fine-tuning-epochs> -b <batch_size> -d <data_folder>'
         sys.exit(2)
 
     #when I run in command line
     if len(opts)!=0:
+        lam = 0.0
+        dropout = True
+        corr_level = [0.1, 0.2, 0.3]
+        denoising = False
+
         for opt,arg in opts:
             if opt == '-h':
                 hid_str = arg
@@ -382,6 +388,14 @@ if __name__ == '__main__':
                     dropout = True
                 elif arg == 'n':
                     dropout = False
+            elif opt == '--corruption':
+                corr_str = arg
+                denoise_str = corr_str.split(',')[0]
+                if denoise_str=='y':
+                    denoising = True
+                    corr_level = [float(s.strip()) for s in corr_str.split(',')[1:]]
+                else:
+                    denoising = False
     #when I run in Pycharm
     else:
         lam = 0.0
@@ -391,11 +405,11 @@ if __name__ == '__main__':
         b_size = 100
         data_dir = 'Data\\mnist.pkl.gz'
         dropout = True
+        corr_level = [0.1, 0.2, 0.3]
 
-    corr_level = [0.1, 0.1, 0.1]
     sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size, corruption_levels=corr_level,dropout=dropout)
     all_data = sae.load_data(data_dir)
-    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, dropout=dropout)
+    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, dropout=dropout, denoising=denoising)
     sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
     mean_inp = sae.get_input_threshold(all_data[0][0])
     #sae.visualize_hidden(mean_inp)
