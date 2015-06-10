@@ -100,7 +100,7 @@ class SparseAutoencoder(object):
             cost = T.mean(L) + \
                    (lam/2)*(T.sum(T.sum(self.W1**2,axis=1)) + T.sum(T.sum(self.W2**2,axis=1)))
         elif cost_fn == 'neg_log':
-            L = - T.sum(self.input * T.log(a3) + (1 - new_input) * T.log(1 - a3), axis=1)
+            L = - T.sum(new_input * T.log(a3) + (1 - new_input) * T.log(1 - a3), axis=1)
             cost = T.mean(L) + (lam/2)*0.0
 
         gparams = T.grad(cost, self.theta)
@@ -121,46 +121,4 @@ class SparseAutoencoder(object):
     def get_hidden_act(self):
         return T.nnet.sigmoid(T.dot(self.input,self.W1) + self.b1)
 
-    def sigmoid(self, x):
-        return 1.0 / (1.0 + np.exp(-x))
 
-    def cost(self,input,W1,b1,index):
-        cost = self.sigmoid(np.dot(input,W1) + b1)[index]
-        return cost
-
-    def cost_prime(self,input,W1,b1,index):
-        prime = optimize.approx_fprime(input, self.cost, 0.00000001, W1, b1, index)
-        return prime
-
-    def get_max_activations(self,input,threshold):
-
-        print 'Calculating max activations...'
-        input_arr = input.get_value()
-        W1_arr = self.W1.get_value()
-        b1_arr = self.b1.get_value()
-        print input_arr.shape
-        max_inputs = []
-        for i in xrange(0,self.n_hidden):
-            inp = input_arr
-            #res = optimize.minimize(fun=self.cost, x0=init_val, args=(W1_arr, b1_arr, i),
-            #                        jac=self.cost_prime, method='L-BFGS-B', options={'maxiter': 100})
-            for epoch in xrange(0,50):
-                if np.sqrt(np.sum(input_arr**2)) > threshold:
-                    print "Threshold reached"
-                    break
-                prime = optimize.approx_fprime(inp, self.cost, 0.0000000001, W1_arr, b1_arr, i)
-                inp = inp + 1.5 * prime
-
-            max_inputs.append(inp)
-            #print "Cost hidden %i: %f" % (i, self.cost(inp,W1_arr,b1_arr,i))
-
-        return np.asarray(max_inputs)
-
-#this calls the __init__ method automatically
-#dA = SparseAutoEncoder()
-#dA.load_data()
-#dA.back_prop()
-#dA.test_back_prop_with_diff_grad_checks()
-
-#dA.save_hidden()
-#dA.save_reconstructed()

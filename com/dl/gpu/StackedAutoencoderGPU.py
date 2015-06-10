@@ -250,17 +250,17 @@ class StackedAutoencoder(object):
                 # doing this every epoch
                 if (iter+1) % validation_freq == 0:
                     validation_losses = valid_model()
-                    mean_valid_loss = np.mean(validation_losses)
-                    print 'epoch %i, minibatch %i/%i, validation error is %f %%' %(epoch, mini_index+1,n_train_batches,mean_valid_loss*100)
+                    curr_valid_loss = np.mean(validation_losses)
+                    print 'epoch %i, minibatch %i/%i, validation error is %f %%' %(epoch, mini_index+1,n_train_batches,curr_valid_loss*100)
 
-                    if mean_valid_loss < best_valid_loss:
+                    if curr_valid_loss < best_valid_loss:
 
                         if (
-                            mean_valid_loss < best_valid_loss * improvement_threshold
+                            curr_valid_loss < best_valid_loss * improvement_threshold
                         ):
                             patience = max(patience, iter * patience_increase)
 
-                        best_valid_loss = mean_valid_loss
+                        best_valid_loss = curr_valid_loss
                         best_iter = iter
 
             print 'Fine tune cost for epoch %i, is %f' %(epoch+1,np.mean(fine_tune_cost))
@@ -269,16 +269,6 @@ class StackedAutoencoder(object):
             if patience <= iter:
                 done_looping = True
                 break
-
-        '''
-        for epoch in xrange(fine_epochs):
-            c=[]
-            for batch_index in xrange(n_train_batches):
-                cost = fine_tune_fn(index=batch_index,lam=lam)
-                c.append(cost)
-
-            print 'Training epoch %d, cost ' % epoch,
-            print np.mean(c)'''
 
 
     def test_model(self,test_set_x,test_set_y,batch_size= 1):
