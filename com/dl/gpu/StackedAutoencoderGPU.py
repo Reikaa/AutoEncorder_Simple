@@ -403,10 +403,10 @@ class StackedAutoencoder(object):
             max_inputs.append(res.x)
 
             if j*1.0/self.h_sizes[layer_idx] > .9 and not printed_90:
-                print '     90%% completed...'
+                print '     90% completed...'
                 printed_90 = True
             elif j*1.0/self.h_sizes[layer_idx] > .5 and not printed_50:
-                print '     50%% completed...'
+                print '     50% completed...'
                 printed_50 = True
 
         return np.asarray(max_inputs)
