@@ -389,6 +389,9 @@ class StackedAutoencoder(object):
             theta_as_blocks_arr.append([self.thetas_as_blocks[k][0].get_value(),self.thetas_as_blocks[k][1].get_value()])
 
         print '\nPerforming optimization (SLSQP) for layer %i...' % layer_idx
+
+        printed_50 = False
+        printed_90 = False
         for j in xrange(self.h_sizes[layer_idx]):
             #print '     Getting max input for node %i in layer %i' % (j, i)
             init_val = input_arr
@@ -399,10 +402,12 @@ class StackedAutoencoder(object):
                 print '     Threshold exceeded node %i layer %i norm %f/%f' % (j, layer_idx, LA.norm(res.x), threshold)
             max_inputs.append(res.x)
 
-            if j/self.h_sizes[layer_idx] > 90:
+            if j*1.0/self.h_sizes[layer_idx] > .9 and not printed_90:
                 print '     90%% completed...'
-            elif j/self.h_sizes[layer_idx] > 50:
+                printed_90 = True
+            elif j*1.0/self.h_sizes[layer_idx] > .5 and not printed_50:
                 print '     50%% completed...'
+                printed_50 = True
 
         return np.asarray(max_inputs)
 
@@ -452,13 +457,13 @@ if __name__ == '__main__':
                     denoising = False
     #when I run in Pycharm
     else:
-        lam = 0.0
-        hid = [49,64,100]
-        pre_ep = 8
-        fine_ep = 25
+        lam = 0.0001
+        hid = [100,100,225]
+        pre_ep = 10
+        fine_ep = 50
         b_size = 100
         data_dir = 'Data\\mnist.pkl.gz'
-        dropout = False
+        dropout = True
         corr_level = [0.1, 0.2, 0.3]
         denoising=True
 

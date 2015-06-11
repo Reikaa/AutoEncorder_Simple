@@ -96,12 +96,12 @@ class SparseAutoencoder(object):
         a2,a3 = self.forward_pass(input=new_input,p=0.5,pre_training=False,dropout=dropout)
 
         if cost_fn == 'sqr_err':
-            L = 0.5 * T.sum(T.sqr(a3-new_input), axis=1)
+            L = 0.5 * T.sum(T.sqr(a3-self.input), axis=1)
             cost = T.mean(L) + \
                    (lam/2)*(T.sum(T.sum(self.W1**2,axis=1)) + T.sum(T.sum(self.W2**2,axis=1)))
         elif cost_fn == 'neg_log':
-            L = - T.sum(new_input * T.log(a3) + (1 - new_input) * T.log(1 - a3), axis=1)
-            cost = T.mean(L) + (lam/2)*0.0
+            L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
+            cost = T.mean(L) + (lam/2)*(T.sum(T.sum(self.W1**2,axis=1)) + T.sum(T.sum(self.W2**2,axis=1)))
 
         gparams = T.grad(cost, self.theta)
 
