@@ -3,7 +3,11 @@ __author__ = 'Thushan Ganegedara'
 import numpy as np
 from SparseAutoencoderGPU import SparseAutoencoder
 from SoftmaxClassifierGPU import SoftmaxClassifier
+
+from scipy import optimize
 from scipy import misc
+from numpy import linalg as LA
+
 import os
 from PIL import Image
 from numpy import linalg as LA
@@ -37,6 +41,7 @@ class StackedAutoencoder(object):
         self.sa_layers = []
         self.sa_activations = []
         self.thetas = []
+        self.thetas_as_blocks = []
 
         self.cost_fn_names = ['sqr_err', 'neg_log']
 
@@ -70,12 +75,13 @@ class StackedAutoencoder(object):
             sa = SparseAutoencoder(n_inputs=curr_input_size, n_hidden=self.h_sizes[i], input=curr_input)
             self.sa_layers.append(sa)
             self.thetas.extend(self.sa_layers[-1].get_params())
+            self.thetas_as_blocks.append(self.sa_layers[-1].get_params())
 
         #-1 index gives the last element
         a2 = self.sa_layers[-1].get_hidden_act()
         self.sa_activations.append(a2)
 
-        self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y, dropout=True)
+        self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y, dropout=False)
         self.lam_fine_tune = T.scalar('lam')
         self.fine_cost = self.softmax.get_cost(self.lam_fine_tune,cost_fn=self.cost_fn_names[1])
 
@@ -169,7 +175,7 @@ class StackedAutoencoder(object):
             return [validation_fn(i) for i in xrange(n_valid_batches)]
         return fine_tuen_fn, valid_score
 
-    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.2, fine_lr=0.25, batch_size=1, lam=0.0001,dropout=True, denoising=False):
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.25, fine_lr=0.4, batch_size=1, lam=0.0001,dropout=True, denoising=False):
 
         print "Training Info..."
         print "Batch size: ",
@@ -301,7 +307,7 @@ class StackedAutoencoder(object):
             os.makedirs(name)
 
     def visualize_hidden(self,threshold):
-        print '\nSaving hidden layer filters...'
+        print '\nSaving hidden layer filters...\n'
 
         #Visualizing 1st hidden layer
         f_name = 'filter_layer_0.png'
@@ -317,19 +323,19 @@ class StackedAutoencoder(object):
         max_inputs =[]
         #Higher level hidden layers
         for i in xrange(1,self.n_layers):
-            print "Saving visualization for higher layers"
-            inp = np.random.random_sample((self.h_sizes[i-1]))*0.02
+            print "Calculating features for higher layers\n"
+            inp = np.random.random_sample((self.i_size,))*0.02
             inp = np.asarray(inp,dtype=config.floatX)
             input = shared(value=inp, name='input',borrow=True)
 
-            max_ins = self.sa_layers[i].get_max_activations(input,threshold)
+            max_ins = self.get_max_activations(input,threshold,i)
 
             max_inputs.append(max_ins)
 
 
         for i in xrange(1,self.n_layers):
             f_name = 'filter_layer_'+str(i)+'.png'
-            im_side = sqrt(self.h_sizes[i-1])
+            im_side = sqrt(self.i_size)
             im_count = int(sqrt(self.h_sizes[i]))
             image = Image.fromarray(tile_raster_images(
                 X=max_inputs[i-1],
@@ -337,10 +343,68 @@ class StackedAutoencoder(object):
                 tile_spacing=(1, 1)))
             image.save(f_name)
 
-    def get_input_threshold(self,train_set_x):
-        mean_input = np.mean(np.sqrt(np.sum(train_set_x.get_value()**2,axis=1)))
-        return mean_input
 
+    def get_input_threshold(self,train_set_x):
+        max_input = np.max(np.sqrt(np.sum(train_set_x.get_value()**2,axis=1)))
+        return max_input*0.95
+
+
+    def sigmoid(self, x):
+        return 1.0 / (1.0 + np.exp(-x))
+
+    def cost(self,input,theta_as_blocks,layer_idx,index):
+
+        layer_input = input
+        for i in xrange(layer_idx):
+            a = self.sigmoid(np.dot(layer_input,theta_as_blocks[i][0]) + theta_as_blocks[i][1])
+            layer_input = a
+
+        cost = self.sigmoid(np.dot(layer_input,theta_as_blocks[layer_idx][0]) + theta_as_blocks[layer_idx][1])[index]
+        #print "         Cost for node %i in layer %i is %f" %(index,layer_idx,cost)
+        return -cost
+
+    def cost_prime(self, input, theta_as_blocks, layer_idx, index):
+        prime = optimize.approx_fprime(input, self.cost, 0.00000001, theta_as_blocks, layer_idx, index)
+        return prime
+
+    def get_max_activations(self,input,threshold,layer_idx):
+
+        #constraint for x
+        def con_x_norm(x,threshold):
+            return threshold-LA.norm(x)
+        cons = {'type': 'ineq','fun': con_x_norm,'args': (threshold,)}
+
+        print 'Calculating max activations for layer %i...\n' % layer_idx
+
+        input_arr = input.get_value()
+        max_inputs = []
+
+        print 'Getting max activations for layer %i\n' % layer_idx
+        #creating the ndarray from symbolic theta
+        theta_as_blocks_arr = []
+
+        print 'Getting theta_as_blocks for layer %i' % layer_idx
+        for k in xrange(layer_idx+1):
+            print '     Getting thetas for layer %i' % k
+            theta_as_blocks_arr.append([self.thetas_as_blocks[k][0].get_value(),self.thetas_as_blocks[k][1].get_value()])
+
+        print '\nPerforming optimization (SLSQP) for layer %i...' % layer_idx
+        for j in xrange(self.h_sizes[layer_idx]):
+            #print '     Getting max input for node %i in layer %i' % (j, i)
+            init_val = input_arr
+            res = optimize.minimize(fun=self.cost, x0=init_val, args=(theta_as_blocks_arr,layer_idx,j),
+                                    jac=self.cost_prime, method='SLSQP', constraints=cons, options={'maxiter': 5})
+
+            if LA.norm(res.x) > threshold:
+                print '     Threshold exceeded node %i layer %i norm %f/%f' % (j, layer_idx, LA.norm(res.x), threshold)
+            max_inputs.append(res.x)
+
+            if j/self.h_sizes[layer_idx] > 90:
+                print '     90%% completed...'
+            elif j/self.h_sizes[layer_idx] > 50:
+                print '     50%% completed...'
+
+        return np.asarray(max_inputs)
 
 
 if __name__ == '__main__':
@@ -389,17 +453,18 @@ if __name__ == '__main__':
     #when I run in Pycharm
     else:
         lam = 0.0
-        hid = [400,400]
-        pre_ep = 5
-        fine_ep = 10
+        hid = [49,64,100]
+        pre_ep = 8
+        fine_ep = 25
         b_size = 100
         data_dir = 'Data\\mnist.pkl.gz'
-        dropout = True
+        dropout = False
         corr_level = [0.1, 0.2, 0.3]
+        denoising=True
 
     sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size, corruption_levels=corr_level,dropout=dropout)
     all_data = sae.load_data(data_dir)
     sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, dropout=dropout, denoising=denoising)
     sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
-    mean_inp = sae.get_input_threshold(all_data[0][0])
-    #sae.visualize_hidden(mean_inp)
+    max_inp = sae.get_input_threshold(all_data[0][0])
+    sae.visualize_hidden(max_inp)

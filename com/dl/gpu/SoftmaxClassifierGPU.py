@@ -12,7 +12,7 @@ class SoftmaxClassifier(object):
         return np.exp(x)
 
 
-    def __init__(self, n_inputs, n_outputs, x=None, y=None, W1=None, b1=None, dropout=True):
+    def __init__(self, n_inputs, n_outputs, x=None, y=None, W1=None, b1=None, dropout=False):
 
         self.x = x
         self.y = y
