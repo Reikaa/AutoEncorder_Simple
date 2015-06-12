@@ -177,7 +177,7 @@ class StackedAutoencoder(object):
             return [validation_fn(i) for i in xrange(n_valid_batches)]
         return fine_tuen_fn, valid_score
 
-    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.25, fine_lr=0.4, batch_size=1, lam=0.0001, beta=0.25, rho = 0.2,dropout=True, denoising=False):
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.25, fine_lr=0.2, batch_size=1, lam=0.0001, beta=0.25, rho = 0.2,dropout=True, denoising=False):
 
         print "Training Info..."
         print "Batch size: ",
@@ -312,7 +312,7 @@ class StackedAutoencoder(object):
         print '\nSaving hidden layer filters...\n'
 
         #Visualizing 1st hidden layer
-        f_name = 'filter_layer_0.png'
+        f_name = 'my_filter_layer_0.png'
         im_side = sqrt(self.i_size)
         im_count = int(sqrt(self.h_sizes[0]))
         image = Image.fromarray(tile_raster_images(
@@ -332,15 +332,11 @@ class StackedAutoencoder(object):
 
             max_ins = self.get_max_activations(input,threshold,i)
 
-            max_inputs.append(max_ins)
-
-
-        for i in xrange(1,self.n_layers):
-            f_name = 'filter_layer_'+str(i)+'.png'
+            f_name = 'my_filter_layer_'+str(i)+'.png'
             im_side = sqrt(self.i_size)
             im_count = int(sqrt(self.h_sizes[i]))
             image = Image.fromarray(tile_raster_images(
-                X=max_inputs[i-1],
+                X=max_ins,
                 img_shape=(im_side, im_side), tile_shape=(im_count, im_count),
                 tile_spacing=(1, 1)))
             image.save(f_name)
@@ -348,7 +344,7 @@ class StackedAutoencoder(object):
 
     def get_input_threshold(self,train_set_x):
         max_input = np.max(np.sqrt(np.sum(train_set_x.get_value()**2,axis=1)))
-        return max_input*0.95
+        return max_input*0.25
 
 
     def sigmoid(self, x):
@@ -461,21 +457,21 @@ if __name__ == '__main__':
                     denoising = False
             elif opt == '--beta':
                 beta = float(arg)
-            elif opt == '-rho':
+            elif opt == '--rho':
                 rho = float(arg)
 
     #when I run in Pycharm
     else:
-        lam = 0.05
-        hid = [100,100,225]
-        pre_ep = 10
-        fine_ep = 50
+        lam = 0.001
+        hid = [400,400,400]
+        pre_ep = 15
+        fine_ep = 100
         b_size = 100
         data_dir = 'Data\\mnist.pkl.gz'
-        dropout = True
-        corr_level = [0.1, 0.2, 0.3]
+        dropout = False
+        corr_level = [0.3, 0.3, 0.3]
         denoising=True
-        beta = 0.4
+        beta = 0.0
         rho = 0.2
     sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size, corruption_levels=corr_level,dropout=dropout)
     all_data = sae.load_data(data_dir)
