@@ -1,7 +1,7 @@
 __author__ = 'Thushan Ganegedara'
 
 import numpy as np
-from SparseAutoencoderGPU import SparseAutoencoder
+from DaFacesGPU import SparseAutoencoder
 from ReconstructionLayerGPU import ReconstructionLayer
 from scipy import optimize
 from scipy import misc
@@ -236,7 +236,7 @@ class StackedAutoencoder(object):
         #########################################################################
         #####                          Fine Tuning                          #####
         #########################################################################
-        print "\nFine tuning..."
+        '''print "\nFine tuning..."
 
         fine_tune_fn,valid_model = self.fine_tuning(datasets,batch_size=self.batch_size,fine_lr=fine_lr)
 
@@ -290,7 +290,7 @@ class StackedAutoencoder(object):
             #before terminating
             if patience <= iter:
                 done_looping = True
-                break
+                break'''
 
 
     def test_model(self,test_set_x,batch_size= 1):
@@ -489,7 +489,7 @@ if __name__ == '__main__':
         pre_ep = 25
         fine_ep = 250
         b_size = 25
-        data_dir = 'Data'
+        data_dir = 'DataFaces'
         dropout = False
         corr_level = [0.3, 0.3, 0.3]
         denoising=True
@@ -500,5 +500,5 @@ if __name__ == '__main__':
     sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, beta=beta, rho=rho, dropout=dropout, denoising=denoising)
     sae.test_model(all_data[2],batch_size=sae.batch_size)
     max_inp = sae.get_input_threshold(all_data[0])
-    sae.save_output_imgs(all_data[2])
+    #sae.save_output_imgs(all_data[2])
     sae.visualize_hidden(max_inp)

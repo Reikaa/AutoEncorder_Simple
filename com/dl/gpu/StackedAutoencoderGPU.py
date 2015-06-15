@@ -218,7 +218,7 @@ class StackedAutoencoder(object):
             training_time = (end_time - start_time)
 
             print "Training time: %f" %training_time
-
+        '''
         #########################################################################
         #####                          Fine Tuning                          #####
         #########################################################################
@@ -276,7 +276,7 @@ class StackedAutoencoder(object):
             #before terminating
             if patience <= iter:
                 done_looping = True
-                break
+                break'''
 
 
     def test_model(self,test_set_x,test_set_y,batch_size= 1):
@@ -344,7 +344,7 @@ class StackedAutoencoder(object):
 
     def get_input_threshold(self,train_set_x):
         max_input = np.max(np.sqrt(np.sum(train_set_x.get_value()**2,axis=1)))
-        return max_input*0.25
+        return max_input*0.75
 
 
     def sigmoid(self, x):
@@ -476,6 +476,6 @@ if __name__ == '__main__':
     sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size, corruption_levels=corr_level,dropout=dropout)
     all_data = sae.load_data(data_dir)
     sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, beta=beta, rho=rho, dropout=dropout, denoising=denoising)
-    sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
+    #sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
     max_inp = sae.get_input_threshold(all_data[0][0])
     sae.visualize_hidden(max_inp)
