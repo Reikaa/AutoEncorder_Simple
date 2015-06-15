@@ -95,15 +95,16 @@ class SparseAutoencoder(object):
 
         a2,a3 = self.forward_pass(input=new_input,p=0.5,pre_training=False,dropout=dropout)
 
-        rho_hat = T.mean(a2,axis=0)
-        kl_div = T.sum(rho*T.log(rho/rho_hat) + (1-rho)*T.log((1-rho)/(1-rho_hat)))
+        rho_hat = T.mean(a2)
+        kl_div = T.sum(rho*T.log(rho/rho_hat) + (1.-rho)*T.log((1.-rho)/(1.-rho_hat)))
+
         if cost_fn == 'sqr_err':
             L = 0.5 * T.sum(T.sqr(a3-self.input), axis=1)
             cost = T.mean(L) + \
-                   (lam/2)*(T.sum(T.sum(self.W1**2,axis=1)) + T.sum(T.sum(self.W2**2,axis=1)))
+                   (lam/2)*(T.sum(T.sum(self.W1**2,axis=1)) + T.sum(T.sum(self.W2**2,axis=1))) + beta * kl_div
         elif cost_fn == 'neg_log':
             L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
-            cost = T.mean(L) + (lam/2)*T.sum(T.sum(self.W1**2,axis=1))
+            cost = T.mean(L) + (lam/2)*T.sum(T.sum(self.W1**2,axis=1)) + beta * kl_div
 
         gparams = T.grad(cost, self.theta)
 

@@ -155,7 +155,7 @@ class StackedAutoencoder(object):
             # corresponding to that small batch of inputs.
             # Therefore, setting self.x to be a mini-batch is enough to make all the subsequents use
             # hidden activations corresponding to that mini batch of self.x
-            sa_fn = function(inputs=[index, Param(lam, default=0.25)], outputs=cost, updates=updates, givens={
+            sa_fn = function(inputs=[index, Param(lam, default=0.25), Param(beta, default=0.25), Param(rho, default=0.25)], outputs=cost, updates=updates, givens={
                 self.x: train_x[index * batch_size: (index+1) * batch_size]
                 }
             )
@@ -191,7 +191,7 @@ class StackedAutoencoder(object):
             return [validation_fn(i) for i in xrange(n_valid_batches)]
         return fine_tuen_fn, valid_score
 
-    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.25, fine_lr=0.2, batch_size=1, lam=0.0001, beta=0.25, rho = 0.2,dropout=True, denoising=False):
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.4, fine_lr=0.2, batch_size=1, lam=0.0001, beta=0.25, rho = 0.2,dropout=True, denoising=False):
 
         print "Training Info..."
         print "Batch size: ",
@@ -223,7 +223,7 @@ class StackedAutoencoder(object):
             for epoch in xrange(pre_epochs):
                 c=[]
                 for batch_index in xrange(n_train_batches):
-                    c.append(pre_train_fns[i](index=batch_index, lam=lam))
+                    c.append(pre_train_fns[i](index=batch_index, lam=lam, beta=beta, rho=rho))
 
                 print 'Training epoch %d, cost ' % epoch,
                 print np.mean(c)
@@ -485,16 +485,16 @@ if __name__ == '__main__':
     #when I run in Pycharm
     else:
         lam = 0.0
-        hid = [400,400,400]
-        pre_ep = 25
+        hid = [225,225,225]
+        pre_ep = 50
         fine_ep = 250
         b_size = 25
         data_dir = 'DataFaces'
         dropout = False
-        corr_level = [0.3, 0.3, 0.3]
-        denoising=True
-        beta = 0.0
-        rho = 0.2
+        corr_level = [0.9, 0.3, 0.3]
+        denoising=False
+        beta = 0.5
+        rho = 0.001
     sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size, corruption_levels=corr_level,dropout=dropout)
     all_data = sae.load_data(data_dir)
     sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, beta=beta, rho=rho, dropout=dropout, denoising=denoising)
