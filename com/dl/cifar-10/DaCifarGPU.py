@@ -86,14 +86,14 @@ class SparseAutoencoder(object):
     # at the moment I am using the squared error between the reconstructed and the input
     # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
     # Theta will be the input that the optimization method trying to optimize
-    def get_cost_and_updates(self, l_rate, lam, beta=0.25, rho=0.2, cost_fn='sqr_err',corruption_level=0.3,dropout=True,dropout_rate=0.5,denoising=False):
+    def get_cost_and_updates(self, l_rate, lam, beta=0.25, rho=0.2, cost_fn='sqr_err',corruption_level=0.3,dropout=True,denoising=False):
 
         if denoising:
             new_input = self.get_corrupted_input(self.input,corruption_level)
         else:
             new_input = self.input
 
-        a2,a3 = self.forward_pass(input=new_input,p=dropout_rate,pre_training=False,dropout=dropout)
+        a2,a3 = self.forward_pass(input=new_input,p=0.5,pre_training=False,dropout=dropout)
 
         rho_hat = T.mean(a2,axis=0)
         kl_div = T.sum(rho*T.log(rho/rho_hat) + (1-rho)*T.log((1-rho)/(1-rho_hat)))

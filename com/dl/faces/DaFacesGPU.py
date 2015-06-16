@@ -78,6 +78,8 @@ class SparseAutoencoder(object):
 
 
     def get_corrupted_input(self,input,corruption_level=0.3):
+
+        noise = np.random.randint(0,10,(self.n_inputs,))
         return self.theano_rng.binomial(size=input.shape, n=1,
                                         p=1 - corruption_level,
                                         dtype=config.floatX) * input

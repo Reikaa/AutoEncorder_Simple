@@ -6,6 +6,8 @@
 .ipython/
 .idea/
 Data/
+com/dl/cifar-10/DataCifar
+com/dl/faces/DataFaces
 Output/
 com/dl/gpu/sae_example.py
 com/dl/gpu/ae_example.py
