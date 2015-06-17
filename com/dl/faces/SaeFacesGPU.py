@@ -97,7 +97,7 @@ class StackedAutoencoder(object):
         self.out_sa = ReconstructionLayer(n_inputs=self.h_sizes[-1], n_outputs=self.o_size,
                                           x_train=self.sa_activations_train[-1], x_test = self.sa_activations_test[-1],
                                           dropout=self.dropout,dropout_rate=self.drop_rates[-1])
-        self.out_sa_out = self.out_sa.get_hidden_act()
+        self.out_sa_out = self.out_sa.get_hidden_act(training=False)
         self.lam_fine_tune = T.scalar('lam')
         self.fine_cost = self.out_sa.get_finetune_cost(self.x)
 
@@ -109,8 +109,8 @@ class StackedAutoencoder(object):
 
     def load_data(self,dir_name='Data'):
 
-        train = np.empty((250,66*37),dtype=np.float32)
-        for i in xrange(1, 251):
+        train = np.empty((450,66*37),dtype=np.float32)
+        for i in xrange(1, 451):
             file_name = "\\image_"+str(i)+".jpg"
             img = misc.imread(dir_name+file_name)
             imgVec = np.reshape(img, (66*37))/255.0
@@ -118,12 +118,12 @@ class StackedAutoencoder(object):
             #train.append(imgVec)
 
 
-        valid = np.empty((100,66*37),dtype=np.float32)
-        for i in xrange(251, 351):
+        valid = np.empty((50,66*37),dtype=np.float32)
+        for i in xrange(301, 351):
             file_name = "\\image_"+str(i)+".jpg"
             img = misc.imread(dir_name+file_name)
             imgVec = np.reshape(img, (66*37))/255.0
-            valid[i-251, :] = imgVec[:]
+            valid[i-301, :] = imgVec[:]
             #valid.append(imgVec)
 
 
@@ -162,7 +162,7 @@ class StackedAutoencoder(object):
         for sa in self.sa_layers:
 
 
-            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, beta=beta, rho=rho, cost_fn=self.cost_fn_names[1], corruption_level=self.corruption_levels[i],denoising=denoising)
+            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, beta=beta, rho=rho, cost_fn=self.cost_fn_names[0], corruption_level=self.corruption_levels[i],denoising=denoising)
 
             #the givens section in this line set the self.x that we assign as input to the initial
             # curr_input value be a small batch rather than the full batch.
@@ -249,6 +249,8 @@ class StackedAutoencoder(object):
 
             print "Training time: %f" %training_time
 
+        #max_inp = self.get_input_threshold(datasets[0])
+        #self.visualize_hidden(max_inp)
         #########################################################################
         #####                          Fine Tuning                          #####
         #########################################################################
@@ -304,9 +306,9 @@ class StackedAutoencoder(object):
             print 'Fine tune cost for epoch %i, is %f' %(epoch+1,np.mean(fine_tune_cost))
             #patience is here to check the maximum number of iterations it should check
             #before terminating
-            if patience <= iter:
-                done_looping = True
-                break
+            #if patience <= iter:
+            #    done_looping = True
+            #    break
 
 
     def test_model(self,test_set_x,batch_size= 1):
@@ -383,7 +385,7 @@ class StackedAutoencoder(object):
             layer_input = a
 
         cost = self.sigmoid(np.dot(layer_input,theta_as_blocks[layer_idx][0]) + theta_as_blocks[layer_idx][1])[index]
-        #print "         Cost for node %i in layer %i is %f" %(index,layer_idx,cost)
+        print "         Cost for node %i in layer %i is %f" %(index,layer_idx,cost)
         return -cost
 
     def cost_prime(self, input, theta_as_blocks, layer_idx, index):
@@ -415,16 +417,19 @@ class StackedAutoencoder(object):
 
         printed_50 = False
         printed_90 = False
+
+        init_val = input_arr
         for j in xrange(self.h_sizes[layer_idx]):
             #print '     Getting max input for node %i in layer %i' % (j, layer_idx)
-            init_val = input_arr
+
             res = optimize.minimize(fun=self.cost, x0=init_val, args=(theta_as_blocks_arr,layer_idx,j),
-                                    jac=self.cost_prime, method='L-BFGS-B', constraints=cons, options={'maxiter': 5})
+                                    jac=self.cost_prime, method='SLSQP', constraints=cons, options={'maxiter': 5})
 
 
             if LA.norm(res.x) > threshold:
                 print '     Threshold exceeded node %i layer %i norm %f/%f' % (j, layer_idx, LA.norm(res.x), threshold)
             max_inputs.append(res.x)
+            init_val = res.x
 
             if j*1.0/self.h_sizes[layer_idx] > .9 and not printed_90:
                 print '     90% completed...'
@@ -502,14 +507,14 @@ if __name__ == '__main__':
     #when I run in Pycharm
     else:
         lam = 0.0
-        hid = [400,400,400]
-        pre_ep = 50
-        fine_ep = 250
+        hid = [800,800,800]
+        pre_ep = 25
+        fine_ep = 500
         b_size = 25
         data_dir = 'DataFaces'
-        dropout = True
+        dropout = False
         dropout_rates = [0.2,0.2,0.2,0.2]
-        corr_level = [0.3, 0.3, 0.3]
+        corr_level = [0.1, 0.1, 0.1]
         denoising=False
         beta = 0.2
         rho = 0.2
@@ -517,6 +522,6 @@ if __name__ == '__main__':
     all_data = sae.load_data(data_dir)
     sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, beta=beta, rho=rho, dropout=dropout, denoising=denoising)
     sae.test_model(all_data[2],batch_size=sae.batch_size)
-    #max_inp = sae.get_input_threshold(all_data[0])
+
     sae.save_output_imgs(all_data[2])
-    #sae.visualize_hidden(max_inp)
+

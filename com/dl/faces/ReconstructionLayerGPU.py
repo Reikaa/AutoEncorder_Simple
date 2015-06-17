@@ -82,8 +82,8 @@ class ReconstructionLayer(object):
 
     def get_finetune_cost(self,input):
 
-        L = - T.sum(input * T.log(self.a_train) + (1 - input) * T.log(1 - self.a_train), axis=1)
-        #L = 0.5 * T.sum(T.sqr(self.a-input), axis=1)
+        #L = - T.sum(input * T.log(self.a_train) + (1 - input) * T.log(1 - self.a_train), axis=1)
+        L = 0.5 * T.sum(T.sqr(self.a_train-input), axis=1)
         cost = T.mean(L)
 
         return cost
