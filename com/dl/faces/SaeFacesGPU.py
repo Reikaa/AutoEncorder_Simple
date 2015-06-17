@@ -261,9 +261,9 @@ class StackedAutoencoder(object):
         #########################################################################
         patience = 50 * n_train_batches # look at this many examples
         patience_increase = 2.
-        improvement_threshold = 0.995
+        improvement_threshold = 0.0
         #validation frequency - the number of minibatches to go through before checking validation set
-        validation_freq = min(n_train_batches,patience/2)
+        validation_freq = min(n_train_batches*10,patience/2)
 
         #we want to minimize best_valid_loss, so we shoudl start with largest
         best_valid_loss = np.inf
@@ -442,11 +442,12 @@ class StackedAutoencoder(object):
         })
         out_data_arr = fn()
 
+        self.mkdir_if_not_exist("Reconstructed")
         for i in xrange(out_data_arr.shape[0]):
             img_arr = out_data_arr[i,:]*255.0
             img_mat = np.reshape(img_arr,(self.i_width,self.i_height))
             img = Image.fromarray(img_mat).convert('LA')
-            img.save("Reconstructed\\" + 'output_'+str(i)+'.png')
+            img.save("Reconstructed" + os.sep + 'output_'+str(i)+'.png')
 
 if __name__ == '__main__':
     #sys.argv[1:] is used to drop the first argument of argument list
