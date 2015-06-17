@@ -18,13 +18,20 @@ class SparseAutoencoder(object):
     #__init__ is called when the constructor of an object is called (i.e. created an object)
 
     #by reducing number of hidden from 400 -> 75 and hidden2 200 -> 25 got an error reduction of 540+ -> 387 (for numbers dataset)
-    def __init__(self, n_inputs, n_hidden, input=None, W1=None, W2=None, b1=None, b2=None):
+    def __init__(self, n_inputs, n_hidden, x_train=None, x_test=None, W1=None, W2=None, b1=None, b2=None,dropout=True,dropout_rate=0.5):
 
-        if input is None:
-            self.input = T.dmatrix('input')
+        self.dropout = dropout
+        self.dropout_rate = dropout_rate
+
+        if x_train is None:
+            self.x_train = T.dmatrix('x_train')
         else:
-            self.input = input
+            self.x_train = x_train
 
+        if x_test is None:
+            self.x_test = T.dmatrix('x_test')
+        else:
+            self.x_test = x_test
         #define global variables for n_inputs and n_hidden
         self.n_hidden = n_hidden
         self.n_inputs = n_inputs
@@ -57,19 +64,20 @@ class SparseAutoencoder(object):
 
         self.theta = [self.W1,self.b1,self.W2,self.b2]
 
-    def forward_pass(self,input=None,p=0.5,pre_training=False,dropout=True):
 
-        if dropout:
+    def forward_pass(self, input=None, training=False):
+
+        if self.dropout:
             srng = T.shared_randomstreams.RandomStreams(np.random.randint(999999))
-            mask = srng.binomial(n=1, p=1-p, size=(self.n_inputs,))
+            mask = srng.binomial(n=1, p=1-self.dropout_rate, size=(self.n_inputs,))
 
-            if pre_training:
-                input_tilda = input * mask
+            if training:
+                input_tilda = input * T.cast(mask, config.floatX)
                 a2 = T.nnet.sigmoid(T.dot(input_tilda,self.W1) + self.b1)
                 a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
             else:
-                a2 = T.nnet.sigmoid(T.dot(input,self.W1*p) + self.b1)
-                a3 = T.nnet.sigmoid(T.dot(a2,self.W2*p) + self.b2)
+                a2 = T.nnet.sigmoid(T.dot(input,self.W1*(1-self.dropout_rate)) + self.b1)
+                a3 = T.nnet.sigmoid(T.dot(a2,self.W2*(1-self.dropout_rate)) + self.b2)
         else:
             a2 = T.nnet.sigmoid(T.dot(input,self.W1) + self.b1)
             a3 = T.nnet.sigmoid(T.dot(a2,self.W2) + self.b2)
@@ -86,23 +94,23 @@ class SparseAutoencoder(object):
     # at the moment I am using the squared error between the reconstructed and the input
     # theta is a vector formed by unrolling W1,b1,W2,b2 in to a single vector
     # Theta will be the input that the optimization method trying to optimize
-    def get_cost_and_updates(self, l_rate, lam, beta=0.25, rho=0.2, cost_fn='sqr_err',corruption_level=0.3,dropout=True,dropout_rate=0.5,denoising=False):
+    def get_cost_and_updates(self, l_rate, lam, beta=0.25, rho=0.2, cost_fn='sqr_err',corruption_level=0.3,denoising=False):
 
         if denoising:
-            new_input = self.get_corrupted_input(self.input,corruption_level)
+            new_input = self.get_corrupted_input(self.x_train,corruption_level)
         else:
-            new_input = self.input
+            new_input = self.x_train
 
-        a2,a3 = self.forward_pass(input=new_input,p=dropout_rate,pre_training=False,dropout=dropout)
+        a2,a3 = self.forward_pass(input=new_input,training=True)
 
         rho_hat = T.mean(a2,axis=0)
         kl_div = T.sum(rho*T.log(rho/rho_hat) + (1-rho)*T.log((1-rho)/(1-rho_hat)))
         if cost_fn == 'sqr_err':
-            L = 0.5 * T.sum(T.sqr(a3-self.input), axis=1)
+            L = 0.5 * T.sum(T.sqr(a3-self.x_train), axis=1)
             cost = T.mean(L) + \
                    (lam/2)*(T.sum(T.sum(self.W1**2,axis=1)) + T.sum(T.sum(self.W2**2,axis=1))) + beta*kl_div
         elif cost_fn == 'neg_log':
-            L = - T.sum(self.input * T.log(a3) + (1 - self.input) * T.log(1 - a3), axis=1)
+            L = - T.sum(self.x_train * T.log(a3) + (1 - self.x_train) * T.log(1 - a3), axis=1)
             cost = T.mean(L) + (lam/2)*T.sum(T.sum(self.W1**2,axis=1)) + beta*kl_div
 
         gparams = T.grad(cost, self.theta)
@@ -120,7 +128,10 @@ class SparseAutoencoder(object):
     def get_params(self):
         return [self.W1, self.b1]
 
-    def get_hidden_act(self):
-        return T.nnet.sigmoid(T.dot(self.input,self.W1) + self.b1)
+    def get_hidden_act(self,training=True):
+        if training:
+            return self.forward_pass(input=self.x_train,training=training)[0]
+        else:
+            return self.forward_pass(input=self.x_test,training=training)[0]
 
 

@@ -35,25 +35,36 @@ class StackedAutoencoder(object):
         self.h_sizes = hidden_size
         self.o_size = out_size
         self.batch_size = batch_size
-        self.corruption_levels = corruption_levels
 
         self.n_layers = len(hidden_size)
         self.sa_layers = []
-        self.sa_activations = []
+        self.sa_activations_train = []
+        self.sa_activations_test = []
         self.thetas = []
         self.thetas_as_blocks = []
 
         self.dropout = dropout
         self.drop_rates = drop_rates
 
+        #check if there are layer_count+1 number of dropout rates (extra one for softmax)
+        if dropout:
+            assert self.n_layers+1 == len(self.drop_rates)
+
+        self.corruption_levels = corruption_levels
+
+        #check if there are layer_count number of corruption levels
+        if denoising:
+            assert self.n_layers == len(self.corruption_levels)
+
         self.cost_fn_names = ['sqr_err', 'neg_log']
 
-        self.x = T.matrix('x')
-        self.y = T.ivector('y')
+        self.x = T.matrix('x')  #store the inputs
+        self.y = T.ivector('y') #store the labels for the corresponding inputs
 
-        self.fine_cost = T.dscalar('fine_cost')
-        self.error = T.dscalar('test_error')
+        self.fine_cost = T.dscalar('fine_cost') #fine tuning cost
+        self.error = T.dscalar('test_error')    #test error value
 
+        #print network info
         print "Network Info:"
         print "Layers: %i" %self.n_layers
         print "Layer sizes: ",
@@ -61,6 +72,10 @@ class StackedAutoencoder(object):
         print ""
         print "Building the model..."
 
+        #intializing the network.
+        #crating SparseAutoencoders and storing them in sa_layers
+        #calculating hidden activations (symbolic) and storing them in sa_activations_train/test
+        #there are two types of activations as the calculations are different for train and test with dropout
         for i in xrange(self.n_layers):
 
             if i==0:
@@ -68,34 +83,45 @@ class StackedAutoencoder(object):
             else:
                 curr_input_size = self.h_sizes[i-1]
 
+            #if i==0 input is the raw input
             if i==0:
-                curr_input = self.x
+                curr_input_train = self.x
+                curr_input_test = self.x
+            #otherwise input is the previous layer's hidden activation
             else:
-                a2 = self.sa_layers[-1].get_hidden_act()
-                self.sa_activations.append(a2)
-                curr_input = self.sa_activations[-1]
+                a2_train = self.sa_layers[-1].get_hidden_act(training=True)
+                a2_test = self.sa_layers[-1].get_hidden_act(training=False)
+                self.sa_activations_train.append(a2_train)
+                self.sa_activations_test.append(a2_test)
+                curr_input_train = self.sa_activations_train[-1]
+                curr_input_test = self.sa_activations_test[-1]
 
-            sa = SparseAutoencoder(n_inputs=curr_input_size, n_hidden=self.h_sizes[i], input=curr_input)
+            sa = SparseAutoencoder(n_inputs=curr_input_size, n_hidden=self.h_sizes[i],
+                                   x_train=curr_input_train, x_test=curr_input_test,
+                                   dropout=dropout, dropout_rate=self.drop_rates[i])
             self.sa_layers.append(sa)
             self.thetas.extend(self.sa_layers[-1].get_params())
             self.thetas_as_blocks.append(self.sa_layers[-1].get_params())
 
         #-1 index gives the last element
-        a2 = self.sa_layers[-1].get_hidden_act()
-        self.sa_activations.append(a2)
+        a2_train = self.sa_layers[-1].get_hidden_act(training=True)
+        a2_test = self.sa_layers[-1].get_hidden_act(training=False)
+        self.sa_activations_train.append(a2_train)
+        self.sa_activations_test.append(a2_test)
 
-        self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y, dropout=False)
+        self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size,
+                                         x_train=self.sa_activations_train[-1], x_test = self.sa_activations_test[-1],
+                                         y=self.y, dropout=self.dropout, dropout_rate=self.drop_rates[-1])
         self.lam_fine_tune = T.scalar('lam')
         self.fine_cost = self.softmax.get_cost(self.lam_fine_tune,cost_fn=self.cost_fn_names[1])
 
         self.thetas.extend(self.softmax.theta)
-        self.softmax_out = self.softmax.forward_pass()
 
         #measure test performance
         self.error = self.softmax.get_error(self.y)
 
 
-    def load_data(self,file_path='Data\\mnist.pkl.gz'):
+    def load_data(self,file_path='Data'+os.sep+'mnist.pkl.gz'):
 
         f = gzip.open(file_path, 'rb')
         train_set, valid_set, test_set = cPickle.load(f)
@@ -133,8 +159,7 @@ class StackedAutoencoder(object):
 
 
             cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, beta=beta, rho=rho, cost_fn=self.cost_fn_names[1],
-                                                    corruption_level=self.corruption_levels[i],
-                                                    dropout=self.dropout,dropout_rate=self.drop_rates[i],denoising=denoising)
+                                                    corruption_level=self.corruption_levels[i], denoising=denoising)
 
             #the givens section in this line set the self.x that we assign as input to the initial
             # curr_input value be a small batch rather than the full batch.
@@ -429,6 +454,7 @@ if __name__ == '__main__':
     if len(opts)!=0:
         lam = 0.0
         dropout = True
+        drop_rates = [0.1,0.1,0.1]
         corr_level = [0.1, 0.2, 0.3]
         denoising = False
         beta = 0.0
@@ -470,14 +496,14 @@ if __name__ == '__main__':
 
     #when I run in Pycharm
     else:
-        lam = 0.001
+        lam = 0.0
         hid = [225,225,225]
-        pre_ep = 15
+        pre_ep = 20
         fine_ep = 75
         b_size = 100
         data_dir = 'Data\\mnist.pkl.gz'
-        dropout = True
-        drop_rates = [0.5,0.2,0.2]
+        dropout = False
+        drop_rates = [0.2,0.2,0.2,0.2]
         corr_level = [0.3, 0.3, 0.3]
         denoising=True
         beta = 0.0
