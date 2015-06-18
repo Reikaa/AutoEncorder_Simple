@@ -10,7 +10,7 @@ from scipy import misc
 import os
 from PIL import Image
 from numpy import linalg as LA
-from math import sqrt
+from math import sqrt,isnan
 
 from theano import function, config, shared, sandbox, Param
 import theano.tensor as T
@@ -398,30 +398,24 @@ class StackedAutoencoder(object):
 
         def nlopt_cost(x,grad,theta_as_blocks,layer_idx,index):
 
-            def nlopt_cost_prim(input, theta_as_blocks, layer_idx, index):
-
-                def cost(input, theta_as_blocks, layer_idx, index):
-                    layer_input = input
+            def get_activation(x, theta_as_blocks, layer_idx, index):
+                    layer_input = x
                     for i in xrange(layer_idx):
                         a = self.sigmoid(np.dot(layer_input,theta_as_blocks[i][0]) + theta_as_blocks[i][1])
                         layer_input = a
-                    cost = self.sigmoid(np.dot(layer_input,theta_as_blocks[layer_idx][0]) + theta_as_blocks[layer_idx][1])[index]
-                    print "         nlopt - Cost for node %i in layer %i is %f" %(index,layer_idx,cost)
-                    return -cost
+                    act = self.sigmoid(np.dot(layer_input,theta_as_blocks[layer_idx][0]) + theta_as_blocks[layer_idx][1])[index]
+                    return act
 
-                prime = optimize.approx_fprime(input, cost, 0.00000001, theta_as_blocks, layer_idx, index)
+            def nlopt_cost_prim(x, theta_as_blocks, layer_idx, index):
+                prime = optimize.approx_fprime(x, cost, 0.00000001, theta_as_blocks, layer_idx, index)
                 return prime
 
             if grad.size > 0:
                 grad = nlopt_cost_prim(x,theta_as_blocks,layer_idx,index)
 
-            layer_input = x
-            for i in xrange(layer_idx):
-                a = self.sigmoid(np.dot(layer_input,theta_as_blocks[i][0]) + theta_as_blocks[i][1])
-                layer_input = a
+            cost = get_activation(x,theta_as_blocks,layer_idx,index)
 
-            cost = self.sigmoid(np.dot(layer_input,theta_as_blocks[layer_idx][0]) + theta_as_blocks[layer_idx][1])[index]
-
+            print "         nlopt - Cost for node %i in layer %i is %f" %(index,layer_idx,cost)
             return -cost
 
         #constraint for x
@@ -450,11 +444,12 @@ class StackedAutoencoder(object):
         for j in xrange(self.h_sizes[layer_idx]):
             #print '     Getting max input for node %i in layer %i' % (j, layer_idx)
             init_val = input_arr
-            opt = nlopt.opt(nlopt.LD_MMA, init_val.size)
+            opt = nlopt.opt(nlopt.LN_COBYLA, init_val.size)
+            opt.set_lower_bounds(np.zeros((init_val.size)))
             opt.set_min_objective(lambda x,grad : nlopt_cost(x,grad,theta_as_blocks_arr,layer_idx,j))
             opt.add_inequality_constraint(lambda x,grad : con_x_norm(x,grad,threshold),1e-8)
             init_val_list = init_val.tolist()
-            opt_x = opt.optimize(init_val)
+            opt_x = opt.optimize(init_val_list)
             min_x = opt.last_optimum_value()
             max_inputs.append(min_x)
 
