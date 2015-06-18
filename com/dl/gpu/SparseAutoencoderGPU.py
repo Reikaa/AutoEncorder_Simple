@@ -103,7 +103,7 @@ class SparseAutoencoder(object):
 
         a2,a3 = self.forward_pass(input=new_input,training=True)
 
-        rho_hat = T.mean(a2,axis=0)
+        rho_hat = T.mean(a2)
         kl_div = T.sum(rho*T.log(rho/rho_hat) + (1-rho)*T.log((1-rho)/(1-rho_hat)))
         if cost_fn == 'sqr_err':
             L = 0.5 * T.sum(T.sqr(a3-self.x_train), axis=1)

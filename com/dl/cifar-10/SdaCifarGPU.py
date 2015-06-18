@@ -30,27 +30,41 @@ except ImportError:
 class StackedAutoencoder(object):
 
 
-    def __init__(self,in_size=1024, hidden_size = [500, 500, 250], out_size = 10, batch_size = 100, corruption_levels=[0.1, 0.1, 0.1],dropout=True):
+    def __init__(self,in_size=28**2, hidden_size = [500, 500, 250], out_size = 10, batch_size = 100, corruption_levels=[0.1, 0.1, 0.1],dropout=True,drop_rates=[0.5,0.2,0.2]):
         self.i_size = in_size
         self.h_sizes = hidden_size
         self.o_size = out_size
         self.batch_size = batch_size
-        self.corruption_levels = corruption_levels
 
         self.n_layers = len(hidden_size)
         self.sa_layers = []
-        self.sa_activations = []
+        self.sa_activations_train = []
+        self.sa_activations_test = []
         self.thetas = []
         self.thetas_as_blocks = []
 
+        self.dropout = dropout
+        self.drop_rates = drop_rates
+
+        #check if there are layer_count+1 number of dropout rates (extra one for softmax)
+        if dropout:
+            assert self.n_layers+1 == len(self.drop_rates)
+
+        self.corruption_levels = corruption_levels
+
+        #check if there are layer_count number of corruption levels
+        if denoising:
+            assert self.n_layers == len(self.corruption_levels)
+
         self.cost_fn_names = ['sqr_err', 'neg_log']
 
-        self.x = T.matrix('x')
-        self.y = T.ivector('y')
+        self.x = T.matrix('x')  #store the inputs
+        self.y = T.ivector('y') #store the labels for the corresponding inputs
 
-        self.fine_cost = T.dscalar('fine_cost')
-        self.error = T.dscalar('test_error')
+        self.fine_cost = T.dscalar('fine_cost') #fine tuning cost
+        self.error = T.dscalar('test_error')    #test error value
 
+        #print network info
         print "Network Info:"
         print "Layers: %i" %self.n_layers
         print "Layer sizes: ",
@@ -58,6 +72,10 @@ class StackedAutoencoder(object):
         print ""
         print "Building the model..."
 
+        #intializing the network.
+        #crating SparseAutoencoders and storing them in sa_layers
+        #calculating hidden activations (symbolic) and storing them in sa_activations_train/test
+        #there are two types of activations as the calculations are different for train and test with dropout
         for i in xrange(self.n_layers):
 
             if i==0:
@@ -65,28 +83,39 @@ class StackedAutoencoder(object):
             else:
                 curr_input_size = self.h_sizes[i-1]
 
+            #if i==0 input is the raw input
             if i==0:
-                curr_input = self.x
+                curr_input_train = self.x
+                curr_input_test = self.x
+            #otherwise input is the previous layer's hidden activation
             else:
-                a2 = self.sa_layers[-1].get_hidden_act()
-                self.sa_activations.append(a2)
-                curr_input = self.sa_activations[-1]
+                a2_train = self.sa_layers[-1].get_hidden_act(training=True)
+                a2_test = self.sa_layers[-1].get_hidden_act(training=False)
+                self.sa_activations_train.append(a2_train)
+                self.sa_activations_test.append(a2_test)
+                curr_input_train = self.sa_activations_train[-1]
+                curr_input_test = self.sa_activations_test[-1]
 
-            sa = SparseAutoencoder(n_inputs=curr_input_size, n_hidden=self.h_sizes[i], input=curr_input)
+            sa = SparseAutoencoder(n_inputs=curr_input_size, n_hidden=self.h_sizes[i],
+                                   x_train=curr_input_train, x_test=curr_input_test,
+                                   dropout=dropout, dropout_rate=self.drop_rates[i])
             self.sa_layers.append(sa)
             self.thetas.extend(self.sa_layers[-1].get_params())
             self.thetas_as_blocks.append(self.sa_layers[-1].get_params())
 
         #-1 index gives the last element
-        a2 = self.sa_layers[-1].get_hidden_act()
-        self.sa_activations.append(a2)
+        a2_train = self.sa_layers[-1].get_hidden_act(training=True)
+        a2_test = self.sa_layers[-1].get_hidden_act(training=False)
+        self.sa_activations_train.append(a2_train)
+        self.sa_activations_test.append(a2_test)
 
-        self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size, x=self.sa_activations[-1], y=self.y, dropout=False)
+        self.softmax = SoftmaxClassifier(n_inputs=self.h_sizes[-1], n_outputs=self.o_size,
+                                         x_train=self.sa_activations_train[-1], x_test = self.sa_activations_test[-1],
+                                         y=self.y, dropout=self.dropout, dropout_rate=self.drop_rates[-1])
         self.lam_fine_tune = T.scalar('lam')
         self.fine_cost = self.softmax.get_cost(self.lam_fine_tune,cost_fn=self.cost_fn_names[1])
 
         self.thetas.extend(self.softmax.theta)
-        self.softmax_out = self.softmax.forward_pass()
 
         #measure test performance
         self.error = self.softmax.get_error(self.y)
@@ -176,7 +205,7 @@ class StackedAutoencoder(object):
 
         return all_data
 
-    def greedy_pre_training(self, train_x, batch_size=1, pre_lr=0.25,dropout=True,denoising=False):
+    def greedy_pre_training(self, train_x, batch_size=1, pre_lr=0.25,denoising=False):
 
         pre_train_fns = []
         index = T.lscalar('index')
@@ -189,7 +218,8 @@ class StackedAutoencoder(object):
         for sa in self.sa_layers:
 
 
-            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, beta=beta, rho=rho, cost_fn=self.cost_fn_names[1], corruption_level=self.corruption_levels[i],dropout=dropout,denoising=denoising)
+            cost, updates = sa.get_cost_and_updates(l_rate=pre_lr, lam=lam, beta=beta, rho=rho, cost_fn=self.cost_fn_names[1],
+                                                    corruption_level=self.corruption_levels[i], denoising=denoising)
 
             #the givens section in this line set the self.x that we assign as input to the initial
             # curr_input value be a small batch rather than the full batch.
@@ -237,7 +267,7 @@ class StackedAutoencoder(object):
             return [validation_fn(i) for i in xrange(n_valid_batches)]
         return fine_tuen_fn, valid_score
 
-    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.25, fine_lr=0.2, batch_size=1, lam=0.0001, beta=0.25, rho = 0.2,dropout=True, denoising=False):
+    def train_model(self, datasets=None, pre_epochs=5, fine_epochs=300, pre_lr=0.25, fine_lr=0.2, batch_size=1, lam=0.0001, beta=0.25, rho = 0.2,denoising=False):
 
         print "Training Info..."
         print "Batch size: ",
@@ -250,7 +280,8 @@ class StackedAutoencoder(object):
         print "Weight decay: ",
         print lam
         print "Dropout: ",
-        print dropout
+        print self.dropout,
+        print self.drop_rates
         print "Sparcity: ",
         print "%f (beta) %f (rho)" %(beta,rho)
 
@@ -260,7 +291,7 @@ class StackedAutoencoder(object):
 
         n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
 
-        pre_train_fns = self.greedy_pre_training(train_set_x, batch_size=self.batch_size,pre_lr=pre_lr,dropout=dropout,denoising=denoising)
+        pre_train_fns = self.greedy_pre_training(train_set_x, batch_size=self.batch_size,pre_lr=pre_lr,denoising=denoising)
 
         start_time = time.clock()
         for i in xrange(self.n_layers):
@@ -282,7 +313,7 @@ class StackedAutoencoder(object):
         #########################################################################
         #####                          Fine Tuning                          #####
         #########################################################################
-        '''print "\nFine tuning..."
+        print "\nFine tuning..."
 
         fine_tune_fn,valid_model = self.fine_tuning(datasets,batch_size=self.batch_size,fine_lr=fine_lr)
 
@@ -291,7 +322,7 @@ class StackedAutoencoder(object):
         #########################################################################
         patience = 10 * n_train_batches # look at this many examples
         patience_increase = 2.
-        improvement_threshold = 0.995
+        improvement_threshold = 1.25
         #validation frequency - the number of minibatches to go through before checking validation set
         validation_freq = min(n_train_batches,patience/2)
 
@@ -336,7 +367,7 @@ class StackedAutoencoder(object):
             #before terminating
             if patience <= iter:
                 done_looping = True
-                break'''
+                break
 
 
     def test_model(self,test_set_x,test_set_y,batch_size= 1):
@@ -483,6 +514,7 @@ if __name__ == '__main__':
     if len(opts)!=0:
         lam = 0.0
         dropout = True
+        drop_rates = [0.1,0.1,0.1]
         corr_level = [0.1, 0.2, 0.3]
         denoising = False
         beta = 0.0
@@ -503,9 +535,11 @@ if __name__ == '__main__':
             elif opt == '--w_decay':
                 lam = float(arg)
             elif opt == '--dropout':
-                if arg=='y':
+                drop_rate_str = arg.split(',')[0]
+                drop_rates = [float(s.strip()) for s in arg.split(',')[1:]]
+                if drop_rate_str=='y':
                     dropout = True
-                elif arg == 'n':
+                elif drop_rate_str == 'n':
                     dropout = False
             elif opt == '--corruption':
                 corr_str = arg
@@ -522,20 +556,22 @@ if __name__ == '__main__':
 
     #when I run in Pycharm
     else:
-        lam = 0.001
-        hid = [400,400,400]
-        pre_ep = 15
-        fine_ep = 100
+        lam = 0.0
+        hid = [225,225,225]
+        pre_ep = 20
+        fine_ep = 75
         b_size = 100
-        data_dir = 'DataCifar'
+        data_dir = 'Data\\mnist.pkl.gz'
         dropout = False
+        drop_rates = [0.2,0.2,0.2,0.2]
         corr_level = [0.3, 0.3, 0.3]
         denoising=True
         beta = 0.0
         rho = 0.2
-    sae = StackedAutoencoder(hidden_size=hid, batch_size=b_size, corruption_levels=corr_level,dropout=dropout)
-    all_data = sae.load_data_bw(data_dir)
-    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, beta=beta, rho=rho, dropout=dropout, denoising=denoising)
-    #sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
-    max_inp = sae.get_input_threshold(all_data[0][0])
-    sae.visualize_hidden(max_inp)
+
+    sae = StackedAutoencoder(in_size=3072,hidden_size=hid, batch_size=b_size, corruption_levels=corr_level,dropout=dropout,drop_rates=drop_rates)
+    all_data = sae.load_data(data_dir)
+    sae.train_model(datasets=all_data, pre_epochs=pre_ep, fine_epochs=fine_ep, batch_size=sae.batch_size, lam=lam, beta=beta, rho=rho, denoising=denoising)
+    sae.test_model(all_data[2][0],all_data[2][1],batch_size=sae.batch_size)
+    #max_inp = sae.get_input_threshold(all_data[0][0])
+    #sae.visualize_hidden(max_inp)

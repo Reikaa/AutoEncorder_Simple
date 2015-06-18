@@ -12,14 +12,18 @@ class SoftmaxClassifier(object):
         return np.exp(x)
 
 
-    def __init__(self, n_inputs, n_outputs, x=None, y=None, W1=None, b1=None, dropout=False):
+    def __init__(self, n_inputs, n_outputs, x_train=None, x_test=None, y=None, W1=None, b1=None, dropout=False,dropout_rate=0.5):
 
-        self.x = x
+        self.x_train = x_train
+        self.x_test = x_test
         self.y = y
 
         #define global variables for n_inputs and n_hidden
         self.n_inputs = n_inputs
         self.n_outputs = n_outputs
+
+        self.dropout = dropout
+        self.dropout_rate = dropout_rate
 
         #generate random weights for W
         if W1 == None:
@@ -32,25 +36,25 @@ class SoftmaxClassifier(object):
             self.b1 = shared(value=b1, name='b1', borrow=True)
 
         #Remember! These are symbolic experessions.
-        self.a_train = self.forward_pass(training=True,dropout=dropout)
-        self.a_test = self.forward_pass(training=False,dropout=dropout)
+        self.a_train = self.forward_pass(input=self.x_train, training=True)
+        self.a_test = self.forward_pass(input=self.x_test, training=False)
         self.pred = T.argmax(self.a_test, axis=1)
 
         self.theta = [self.W1,self.b1]
 
 
-    def forward_pass(self,p=0.5,training=False,dropout=True):
-        if dropout:
+    def forward_pass(self,input=None,training=False):
+        if self.dropout:
             srng = T.shared_randomstreams.RandomStreams(np.random.randint(999999))
-            mask = srng.binomial(n=1, p=1-p, size=(self.n_inputs,))
-            x_tilda = self.x * mask
+            mask = srng.binomial(n=1, p=1-self.dropout_rate, size=(self.n_inputs,))
+            x_tilda = input * T.cast(mask, config.floatX)
             if training:
                 a = T.nnet.softmax(T.dot(x_tilda, self.W1) + self.b1)
             else:
-                a = T.nnet.softmax(T.dot(self.x, self.W1*p) + self.b1)
+                a = T.nnet.softmax(T.dot(input, self.W1*(1-self.dropout_rate)) + self.b1)
 
         else:
-            a = T.nnet.softmax(T.dot(self.x, self.W1) + self.b1)
+            a = T.nnet.softmax(T.dot(input, self.W1) + self.b1)
         return a
 
     def get_cost(self,lam,cost_fn='neg_log'):
