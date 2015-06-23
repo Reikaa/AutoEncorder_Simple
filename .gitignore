@@ -8,6 +8,9 @@
 Data/
 com/dl/cifar-10/DataCifar
 com/dl/faces/DataFaces
+Util/all_images
+Util/faces
+Util/labels
 Output/
 com/dl/gpu/sae_example.py
 com/dl/gpu/ae_example.py
