@@ -3,6 +3,9 @@
 *.jpg
 *.dat
 *.pyc
+*.tar.gz
+*.tar
+*.pkl
 .ipython/
 .idea/
 Data/
@@ -11,6 +14,7 @@ com/dl/faces/DataFaces
 Util/all_images
 Util/faces
 Util/labels
+com/dl/faces-classif/DataFaces
 Output/
 com/dl/gpu/sae_example.py
 com/dl/gpu/ae_example.py
