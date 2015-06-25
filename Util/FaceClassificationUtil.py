@@ -116,6 +116,7 @@ if __name__ == '__main__':
 
     f_names = ['fold_0_data','fold_1_data','fold_2_data','fold_3_data','fold_4_data']
     for f in f_names:
+        print 'started ' + f
         [imgs,labels] = util.load_data("all_images","labels",f+'.txt')
         pickle.dump([imgs,labels], open(f+".pkl", "wb"))
         print 'done ' + f

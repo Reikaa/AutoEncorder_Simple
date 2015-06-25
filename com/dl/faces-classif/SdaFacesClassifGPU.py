@@ -5,13 +5,15 @@ from DaFacesClassifGPU import SparseAutoencoder
 from SoftmaxFacesClasifGPU import SoftmaxClassifier
 
 from scipy import optimize
+import nlopt
+
 from scipy import misc
 from numpy import linalg as LA
 
 import os
 from PIL import Image
 from numpy import linalg as LA
-from math import sqrt
+from math import sqrt,isnan
 import gzip,cPickle
 
 from theano import function, config, shared, sandbox, Param
@@ -174,16 +176,16 @@ class StackedAutoencoder(object):
 
         f = open(dir_name + os.sep +train_names, 'rb')
         train_data_ls,train_labels = cPickle.load(f)
-        train_data = np.asarray(train_data_ls)/255.
+        train_data = np.asarray(train_data_ls)
         train_set = [train_data,train_labels]
 
         f = open(dir_name + os.sep +valid_name, 'rb')
         valid_data,valid_labels = cPickle.load(f)
-        valid_set = [valid_data/255.,valid_labels]
+        valid_set = [valid_data,valid_labels]
 
         f = open(dir_name + os.sep +test_name, 'rb')
         test_data,test_labels = cPickle.load(f)
-        test_set = [test_data/255.,test_labels]
+        test_set = [test_data,test_labels]
 
         f.close()
 
@@ -417,11 +419,11 @@ class StackedAutoencoder(object):
         #Higher level hidden layers
         for i in xrange(1,self.n_layers):
             print "Calculating features for higher layers\n"
-            inp = np.random.random_sample((self.i_size,))*0.02
+            inp = 1e-8 + np.random.random_sample((self.i_size,))*0.05
             inp = np.asarray(inp,dtype=config.floatX)
             input = shared(value=inp, name='input',borrow=True)
 
-            max_ins = self.get_max_activations(input,threshold,bounds,i)
+            max_ins = self.nlopt_optimization(input,threshold,i)
 
             f_name = 'my_filter_layer_'+str(i)+'.png'
             im_side = sqrt(self.i_size)
@@ -435,7 +437,7 @@ class StackedAutoencoder(object):
 
     def get_input_threshold(self,train_set_x):
         max_input = np.max(np.sqrt(np.sum(train_set_x.get_value()**2,axis=1)))
-        return max_input*0.75
+        return max_input*0.95
 
     def get_bounds(self,train_set_x):
         h_bounds = np.max(train_set_x.get_value(),axis=0)
@@ -456,11 +458,99 @@ class StackedAutoencoder(object):
 
         cost = self.sigmoid(np.dot(layer_input,theta_as_blocks[layer_idx][0]) + theta_as_blocks[layer_idx][1])[index]
         #print "         Cost for node %i in layer %i is %f" %(index,layer_idx,cost)
-        return -cost
+        return cost
 
     def cost_prime(self, input, theta_as_blocks, layer_idx, index):
-        prime = optimize.approx_fprime(input, self.cost, 0.00000001, theta_as_blocks, layer_idx, index)
+        prime = optimize.approx_fprime(input, self.cost, 0.01, theta_as_blocks, layer_idx, index)
         return prime
+
+    def nlopt_optimization(self,input,threshold,layer_idx):
+
+        def get_activation(x, theta, l_idx, i):
+            layer_input = x
+            for j in xrange(l_idx):
+                a = self.sigmoid(np.dot(layer_input,theta[j][0]) + theta[j][1])
+                layer_input = np.asarray(a, dtype=np.float16)
+            temp = self.sigmoid(np.dot(layer_input,theta[layer_idx][0]) + theta[layer_idx][1])
+            act = temp[i]
+            return act * 1.0
+
+        def nlopt_cost_prim(x, theta, l_idx, i):
+            prime = optimize.approx_fprime(x, get_activation, 1e-5, theta, l_idx, i)
+            return prime
+
+        def nlopt_cost_prim_man(x,theta, l_idx, i):
+            grad_appx = np.zeros((x.size))
+            for j in range(x.size):
+                e_j = np.zeros((x.size,), dtype=np.float16)
+                e_j[j] = 1e-1
+                x_j_plus = x + e_j
+                temp1 = get_activation(x_j_plus,theta,l_idx,i)
+                temp2 = get_activation(x,theta,l_idx,i)
+                temp = temp1-temp2
+                grad_appx[j] = (temp)/1e-1
+
+            return grad_appx
+
+        def nlopt_cost(x,g,theta,l_idx,i):
+            if g.size > 0:
+                g = nlopt_cost_prim_man(x,theta,l_idx,i)
+
+            cost = get_activation(x,theta,layer_idx,i)
+
+            print "         nlopt - Cost for node %i in layer %i is %f" %(i,l_idx,cost)
+            return -cost
+
+        #constraint for x
+        def con_x_norm(x,grad,threshold):
+            if grad.size > 0.:
+                grad = x/LA.norm(x)
+            return LA.norm(x)-threshold
+
+        print 'nlopt - Calculating max activations for layer %i...\n' % layer_idx
+
+        input_arr = input.get_value()
+        max_inputs = []
+
+        print 'nlopt - Getting max activations for layer %i\n' % layer_idx
+        #creating the ndarray from symbolic theta
+        theta_as_blocks_arr = []
+
+        print 'nlopt - Getting theta_as_blocks for layer %i' % layer_idx
+        for k in xrange(layer_idx+1):
+            print '     nlopt - Getting thetas for layer %i' % k
+            theta_as_blocks_arr.append([np.asarray(self.thetas_as_blocks[k][0].get_value(),dtype=np.float16),np.asarray(self.thetas_as_blocks[k][1].get_value(),dtype=np.float16)])
+
+        printed_50 = False
+        printed_90 = False
+
+        for j in xrange(self.h_sizes[layer_idx]):
+            #print '     Getting max input for node %i in layer %i' % (j, layer_idx)
+            init_val = np.asarray(input_arr, dtype=np.float16)
+            opt = nlopt.opt(nlopt.LD_LBFGS, init_val.size)
+            opt.set_lower_bounds(np.zeros((init_val.size)).tolist())
+            #opt.set_upper_bounds(np.ones((init_val.size)).tolist())
+
+            opt.set_max_objective(lambda x,grad : nlopt_cost(x,grad,theta_as_blocks_arr,layer_idx,j))
+            #opt.add_inequality_constraint(lambda x,grad : con_x_norm(x,grad,threshold),1e-8)
+            #opt.set_vector_storage(25)
+            opt.set_xtol_rel(1e-10)
+            #opt.set_maxeval(1500)
+
+            opt_x = opt.optimize(init_val)
+            min_x = opt.last_optimum_value()
+            print "Last optimize result: ",opt.last_optimize_result()
+            print '     Got max input for node %i in layer %i: %f' % (j, layer_idx, min_x)
+            max_inputs.append(opt_x)
+
+            if j*1.0/self.h_sizes[layer_idx] > .9 and not printed_90:
+                print '     90% completed...'
+                printed_90 = True
+            elif j*1.0/self.h_sizes[layer_idx] > .5 and not printed_50:
+                print '     50% completed...'
+                printed_50 = True
+
+        return np.asarray(max_inputs)
 
     def get_max_activations(self,input,threshold,bounds,layer_idx):
 
@@ -490,13 +580,20 @@ class StackedAutoencoder(object):
         for j in xrange(self.h_sizes[layer_idx]):
             #print '     Getting max input for node %i in layer %i' % (j, i)
             init_val = input_arr
-            res = optimize.minimize(fun=self.cost, x0=init_val, args=(theta_as_blocks_arr,layer_idx,j),
-                                    jac=self.cost_prime, method='L-BFGS-B', constraints=cons, bounds=bounds,options={'maxiter': 6})
 
+            #if -self.cost(init_val,theta_as_blocks_arr,layer_idx,j)<0.001:
+            #    max_inputs.append(np.zeros((init_val.size)))
+            #    continue
+
+            res = optimize.minimize(fun=self.cost, x0=init_val, args=(theta_as_blocks_arr,layer_idx,j),
+                                    jac=self.cost_prime, method='COBYLA', constraints=cons,
+                                    bounds=bounds, options={'disp':True})
+
+            print '     Got cost for node %i layer %i: %f' % (j, layer_idx, LA.norm(res.fun))
             if LA.norm(res.x) > threshold:
                 print '     Threshold exceeded node %i layer %i norm %f/%f' % (j, layer_idx, LA.norm(res.x), threshold)
             max_inputs.append(res.x)
-            print '     Got cost for node %i layer %i norm %f' % (j, layer_idx, LA.norm(res.fun))
+
             if j*1.0/self.h_sizes[layer_idx] > .9 and not printed_90:
                 print '     90% completed...'
                 printed_90 = True
@@ -563,14 +660,14 @@ if __name__ == '__main__':
     #when I run in Pycharm
     else:
         lam = 0.0
-        hid = [100,100,100,100,100]
-        pre_ep = 15
+        hid = [64,64]
+        pre_ep = 5
         fine_ep = 150
         b_size = 100
         data_dir = 'DataFaces'
         dropout = True
-        drop_rates = [0.2,0.2,0.2,0.2,0.2,0.2]
-        corr_level = [0.3, 0.3, 0.3, 0.3, 0.3]
+        drop_rates = [0.2,0.2,0.2]
+        corr_level = [0.3, 0.3]
         denoising=True
         beta = 0.0
         rho = 0.2
