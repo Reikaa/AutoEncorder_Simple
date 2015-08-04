@@ -34,7 +34,7 @@ class Transformer(object):
         self._logger = None
 
 
-    def make_func(self, x, y, batch_size, output, update):
+    def make_func(self, x, y, batch_size, output, update, transformed_x = identity):
         '''
         returns a Theano function that takes x and y inputs and return the given output using given updates
         :param x: input feature vectors
@@ -45,7 +45,7 @@ class Transformer(object):
         :return: Theano function
         '''
         idx = T.scalar('idx')
-        given = {self._x : x[idx * batch_size : (idx + 1) * batch_size],
+        given = {self._x : transformed_x(x[idx * batch_size : (idx + 1) * batch_size]),
                  self._y : y[idx * batch_size : (idx + 1) * batch_size]}
 
         return theano.function(inputs=[idx],outputs=output, updates=update, givens=given, on_unused_input='warn')
@@ -136,14 +136,14 @@ class DeepAutoencoder(Transformer):
         self.validation_error = None
         return None
 
-    def train_func(self, _, learning_rate, x, y, batch_size):
+    def train_func(self, _, learning_rate, x, y, batch_size, transformed_x=identity):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
-        return self.make_func(x=x,y=y,batch_size=batch_size,output=None, updates=updates)
+        return self.make_func(x=x,y=y,batch_size=batch_size,output=None, updates=updates, transformed_x=transformed_x)
 
-    def validate_func(self, _, x, y, batch_size):
-        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.validation_error, update=None)
+    def validate_func(self, _, x, y, batch_size, transformed_x=identity):
+        return self.make_func(x=x,y=y,batch_size=batch_size,output=self.validation_error, update=None, transformed_x=transformed_x)
 
-    def get_hard_examples(self, _, x, y, batch_size):
+    def get_hard_examples(self, _, x, y, batch_size, transformed_x=identity):
         '''
         Returns the set of training cases (above avg reconstruction error)
         :param _:
@@ -154,7 +154,7 @@ class DeepAutoencoder(Transformer):
         '''
         # sort the values by cost and get the top half of it (above average error)
         indexes = T.argsort(self.cost_vector)[(self.cost_vector.shape[0] // 2):]
-        return self.make_func(x=x, y=y, batch_size=batch_size, output=[self._x[indexes], self._y[indexes]], update=None)
+        return self.make_func(x=x, y=y, batch_size=batch_size, output=[self._x[indexes], self._y[indexes]], update=None, transformed_x=transformed_x)
 
 class StackedAutoencoder(Transformer):
     ''' Stacks a set of autoencoders '''
@@ -169,8 +169,8 @@ class StackedAutoencoder(Transformer):
         for autoencoder in self._autoencoders:
             autoencoder.process(x,y)
 
-    def train_func(self, arc, learning_rate, x, y, batch_size):
-        return self._autoencoders[arc].train_func(0, learning_rate,x,y,batch_size)
+    def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity):
+        return self._autoencoders[arc].train_func(0, learning_rate,x,y,batch_size, lambda x: chained_output(self.layers[:arc],transformed_x(x)))
 
-    def validate_func(self, arc, x, y, batch_size):
-        return self._autoencoders[arc].validate_func(0,x,y,batch_size)
+    def validate_func(self, arc, x, y, batch_size,transformed_x = identity):
+        return self._autoencoders[arc].validate_func(0,x,y,batch_size,lambda x: chained_output(self.layers[:arc],transformed_x(x)))
