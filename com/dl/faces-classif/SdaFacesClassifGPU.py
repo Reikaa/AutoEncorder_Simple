@@ -423,7 +423,7 @@ class StackedAutoencoder(object):
             inp = np.asarray(inp,dtype=config.floatX)
             input = shared(value=inp, name='input',borrow=True)
 
-            max_ins = self.nlopt_optimization(input,threshold,i)
+            max_ins = self.nlopt_optimization(input,threshold,bounds,i)
 
             f_name = 'my_filter_layer_'+str(i)+'.png'
             im_side = sqrt(self.i_size)
@@ -453,6 +453,7 @@ class StackedAutoencoder(object):
 
         layer_input = input
         for i in xrange(layer_idx):
+            layer_input
             a = self.sigmoid(np.dot(layer_input,theta_as_blocks[i][0]) + theta_as_blocks[i][1])
             layer_input = a
 
@@ -461,50 +462,56 @@ class StackedAutoencoder(object):
         return cost
 
     def cost_prime(self, input, theta_as_blocks, layer_idx, index):
-        prime = optimize.approx_fprime(input, self.cost, 0.01, theta_as_blocks, layer_idx, index)
+        prime = optimize.approx_fprime(input, self.cost, 0.0001, theta_as_blocks, layer_idx, index)
         return prime
 
-    def nlopt_optimization(self,input,threshold,layer_idx):
+    def nlopt_optimization(self,input,threshold,bounds,layer_idx):
 
         def get_activation(x, theta, l_idx, i):
             layer_input = x
-            for j in xrange(l_idx):
-                a = self.sigmoid(np.dot(layer_input,theta[j][0]) + theta[j][1])
-                layer_input = np.asarray(a, dtype=np.float16)
-            temp = self.sigmoid(np.dot(layer_input,theta[layer_idx][0]) + theta[layer_idx][1])
-            act = temp[i]
+            for j in xrange(l_idx+1):
+                temp_lyr_input = np.asarray(layer_input*1e2,dtype=np.float16)
+                tmp_theta_w = np.asarray(theta[j][0]*1e2,dtype=np.float16)
+                tmp_theta_b = np.asarray(theta[j][1]*1e2,dtype=np.float16)
+                tmp_mult = np.asarray(np.dot(temp_lyr_input,tmp_theta_w)/1e4,dtype=np.float32)
+                if isnan(any(tmp_mult)):
+                    print "problem Nan"
+                a = self.sigmoid(tmp_mult + tmp_theta_b/1e2)
+                layer_input = a
+
+            act = layer_input[i]
             return act * 1.0
 
         def nlopt_cost_prim(x, theta, l_idx, i):
-            prime = optimize.approx_fprime(x, get_activation, 1e-5, theta, l_idx, i)
-            return prime
+            prime = optimize.approx_fprime(x, get_activation, 1e-3, theta, l_idx, i)
+            return prime * 100.0
 
         def nlopt_cost_prim_man(x,theta, l_idx, i):
             grad_appx = np.zeros((x.size))
             for j in range(x.size):
-                e_j = np.zeros((x.size,), dtype=np.float16)
+                e_j = np.zeros((x.size,), dtype=np.float32)
                 e_j[j] = 1e-1
                 x_j_plus = x + e_j
                 temp1 = get_activation(x_j_plus,theta,l_idx,i)
                 temp2 = get_activation(x,theta,l_idx,i)
                 temp = temp1-temp2
-                grad_appx[j] = (temp)/1e-1
+                grad_appx[j] = temp/1e-3
 
             return grad_appx
 
         def nlopt_cost(x,g,theta,l_idx,i):
             if g.size > 0:
-                g = nlopt_cost_prim_man(x,theta,l_idx,i)
+                g = nlopt_cost_prim(x,theta,l_idx,i)
 
             cost = get_activation(x,theta,layer_idx,i)
 
             print "         nlopt - Cost for node %i in layer %i is %f" %(i,l_idx,cost)
-            return -cost
+            return cost
 
         #constraint for x
         def con_x_norm(x,grad,threshold):
-            if grad.size > 0.:
-                grad = x/LA.norm(x)
+            if grad.size > 0:
+                grad = x*1./LA.norm(x)
             return LA.norm(x)-threshold
 
         print 'nlopt - Calculating max activations for layer %i...\n' % layer_idx
@@ -519,23 +526,24 @@ class StackedAutoencoder(object):
         print 'nlopt - Getting theta_as_blocks for layer %i' % layer_idx
         for k in xrange(layer_idx+1):
             print '     nlopt - Getting thetas for layer %i' % k
-            theta_as_blocks_arr.append([np.asarray(self.thetas_as_blocks[k][0].get_value(),dtype=np.float16),np.asarray(self.thetas_as_blocks[k][1].get_value(),dtype=np.float16)])
+            theta_as_blocks_arr.append([np.asarray(self.thetas_as_blocks[k][0].get_value(),dtype=np.float32),np.asarray(self.thetas_as_blocks[k][1].get_value(),dtype=np.float32)])
 
         printed_50 = False
         printed_90 = False
 
+        init_val = np.asarray(input_arr, dtype=np.float32)
+        opt = nlopt.opt(nlopt.LD_MMA, init_val.size)
+
         for j in xrange(self.h_sizes[layer_idx]):
             #print '     Getting max input for node %i in layer %i' % (j, layer_idx)
-            init_val = np.asarray(input_arr, dtype=np.float16)
-            opt = nlopt.opt(nlopt.LD_LBFGS, init_val.size)
-            opt.set_lower_bounds(np.zeros((init_val.size)).tolist())
-            #opt.set_upper_bounds(np.ones((init_val.size)).tolist())
+
+            opt.set_lower_bounds([0.0]*init_val.size)
+            opt.set_upper_bounds([1.0]*init_val.size)
 
             opt.set_max_objective(lambda x,grad : nlopt_cost(x,grad,theta_as_blocks_arr,layer_idx,j))
-            #opt.add_inequality_constraint(lambda x,grad : con_x_norm(x,grad,threshold),1e-8)
+            opt.add_inequality_constraint(lambda x,grad : con_x_norm(x,grad,threshold), 1e-8)
             #opt.set_vector_storage(25)
-            opt.set_xtol_rel(1e-10)
-            #opt.set_maxeval(1500)
+            opt.set_maxeval(15)
 
             opt_x = opt.optimize(init_val)
             min_x = opt.last_optimum_value()
@@ -586,8 +594,8 @@ class StackedAutoencoder(object):
             #    continue
 
             res = optimize.minimize(fun=self.cost, x0=init_val, args=(theta_as_blocks_arr,layer_idx,j),
-                                    jac=self.cost_prime, method='COBYLA', constraints=cons,
-                                    bounds=bounds, options={'disp':True})
+                                    jac=self.cost_prime, method='L-BFGS-B', constraints=cons,
+                                    bounds=bounds, options={'maxiter':10})
 
             print '     Got cost for node %i layer %i: %f' % (j, layer_idx, LA.norm(res.fun))
             if LA.norm(res.x) > threshold:
