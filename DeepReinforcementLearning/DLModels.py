@@ -21,6 +21,19 @@ def chained_output(layers, x):
     '''
     return functools.reduce(lambda acc, layer: layer.output(acc), layers, x)
 
+def iterations_shim(func, iterations):
+    '''
+    Repeated calls to the same function
+    :param func: The function
+    :param iterations: number of times to call the function
+    :return:
+    '''
+
+    def function(i):
+        for _ in range(iterations):
+            func(i)
+    return func
+
 
 class Transformer(object):
 
@@ -172,5 +185,180 @@ class StackedAutoencoder(Transformer):
     def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity):
         return self._autoencoders[arc].train_func(0, learning_rate,x,y,batch_size, lambda x: chained_output(self.layers[:arc],transformed_x(x)))
 
-    def validate_func(self, arc, x, y, batch_size,transformed_x = identity):
+    def validate_func(self, arc, x, y, batch_size, transformed_x = identity):
         return self._autoencoders[arc].validate_func(0,x,y,batch_size,lambda x: chained_output(self.layers[:arc],transformed_x(x)))
+
+class Softmax(Transformer):
+
+    def __init__(self, layers, iterations):
+        super.__init__(layers)
+
+        self.theta = None
+        self._errors = None
+        self.cost_vector = None
+        self.cost = None
+        self.iterations = iterations
+
+    def process(self, x, y):
+        self._x = x
+        self._y = y
+
+        p_y_given_x = T.nnet.softmax(chained_output(self.layers, x))
+
+        results = T.argmax(p_y_given_x, axis=1)
+
+        self.theta = [param for layer in self.layers for param in [layer.W, layer.b]]
+        self.errors = T.mean(T.neq(results,y))
+        self.cost_vector = -T.log(p_y_given_x)[T.arrange(y.shape[0]), y]
+        self.cost = T.mean(self.cost_vector)
+
+        return None
+
+    def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity, iterations=None):
+
+        if iterations is None:
+            iterations = self.iterations
+
+        updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
+
+        train = self.make_func(x,y,batch_size,None,updates,transformed_x)
+        return iterations_shim(train, iterations)
+
+    def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
+        return self.make_func(x,y,batch_size,self.cost,None,transformed_x)
+
+    def error_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self.make_func(x,y,batch_size,self._errors,None, transformed_x)
+
+class Pool(object):
+    ''' A ring buffer (Acts as a Queue) '''
+    __slots__ = ['size', 'max_size', 'position', 'data', 'data_y', '_update']
+
+    def __init__(self, row_size, max_size):
+        self.size = 0
+        self.max_size = max_size
+        self.position = 0
+
+        self.data = theano.shared(np.empty(max_size, row_size, dtype=theano.config.floatX), 'pool' )
+        self.data_y = theano.shared(np.empty(max_size, dtype='int32'), 'pool_y')
+
+        x = T.matrix('new_data')
+        y = T.ivector('new_data_y')
+        pos = T.iscalar('update_index')
+
+        update = [(self.data, T.set_subtensor(self.data[pos:pos+x.shape[0]],x)),
+            (self.data_y, T.set_subtensor(self.data_y[pos:pos+y.shape[0]],y))]
+
+        self._update = theano.function([pos, x, y], updates=update)
+
+    def add(self, x, y, rows=None):
+
+        if not rows:
+            rows = x.shape[0]
+
+        if rows > self.max_size:
+            x = x[rows - self.max_size]
+            y = y[rows - self.max_size]
+
+        if rows+ self.position > self.max_size:
+            available_size = self.max_size - self.position
+            self._ring_add(x[:available_size], y[:available_size])
+            x = x[available_size:]
+            y = y[available_size:]
+
+        self._ring_add(x,y)
+
+    def clear(self):
+        self.size = 0
+        self.position = 0
+
+    def _ring_add(self, x, y):
+        self._update(self.position, x, y)
+        self.size = min(self.size + x.shape[0], self.max_size)
+        self.position = (self.position + x.shape[0]) % self.max_size
+
+class MergeIncrementingAutoencoder(Transformer):
+
+    __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations']
+
+    def __init__(self, layers, corruption_level, rng, lam, iterations):
+        super.__init__(layers)
+
+        self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
+        self._layered_autoencoders = [DeepAutoencoder([self.layers[i]], corruption_level, rng)
+                                       for i, layer in enumerate(self.layers[:-1])]
+        self._softmax = Softmax(layers)
+        self._combined_objective = CombinedObjective(layers, corruption_level, rng, lam, iterations)
+        self.lam = lam
+        self.iterations = iterations
+        self.rng = np.random.RandomState(0)
+
+    def process(self, x, y):
+        self._x = x
+        self._y = y
+        self._autoencoder.process(x,y)
+        self._softmax.process(x,y)
+        self._combined_objective.process(x,y)
+        for ae in self._layered_autoencoders:
+            ae.process(x,y)
+
+    def merge_inc_func(self, learning_rate, batch_size, x, y):
+
+        m = T.matrix('m')
+        # map operation applies a certain function to a sequence. This is the upper part of cosine dist eqn
+        m_dists, _ = theano.map(lambda v: T.sqrt(T.dot(v, v.T)), m)
+        # dimshuffle(0,'x') is converting N -> Nx1
+        m_cosine = (T.dot(m, m.T)/m_dists) / m_dists.dimshuffle(0,'x')
+        m_ranks = T.argsort((m_cosine - T.tri(m.shape[0]) * np.finfo(theano.config.floatX).max).flatten())[(m.shape[0] * (m.shape[0]+1)) // 2:]
+
+class CombinedObjective(Transformer):
+
+    def __init__(self, layers, corruption_level, rng, lam, iterations):
+        super.__init__(layers)
+
+        self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
+        self._softmax = Softmax(layers)
+        self.lam = lam
+        self.iterations = iterations
+
+    def process(self, x, yy):
+        self._x = x
+        self._y = yy
+
+        self._autoencoder.process(x,yy)
+        self._softmax.process(x,yy)
+
+    def train_func(self, arc, learning_rate, x, y, batch_size, transformed_x=identity, iterations = None):
+
+        if iterations is None:
+            iterations = self.iterations
+
+        combined_cost = self._softmax.cost + self.lam * self._autoencoder.cost
+
+        theta = []
+        for layer in self.layers[:-1]:
+            theta += [layer.W, layer.b, layer.b_prime]
+        theta += [self.layers[-1].W, self.layers[-1].b] #softmax layer
+
+        update = [(param, param - learning_rate * grad) for param, grad in zip(theta, T.grad(combined_cost,wrt=theta))]
+        func = self.make_func(x, y, batch_size, None, update, transformed_x)
+        return iterations_shim(func, iterations)
+
+    def validate_func(self, arc, x, y, batch_size, transformed_x=identity):
+        return self._softmax.validate_func(arc, x, y, batch_size, transformed_x)
+
+    def error_func(self, arc, x, y, batch_size, transformed_x = identity):
+        return self._softmax.error_func(arc, x, y, batch_size, transformed_x)
+
+
+class DeepReinforcementLearningModel(Transformer):
+
+    def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size, controller):
+
+        super.__init__(layers)
+
+        self._mi_batch_size = mi_batch_size
+        self._controller = controller
+        self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
+        self._softmax = CombinedObjective(layers, corruption_level, rng, lam, iterations)
+        self._merge_inc =
