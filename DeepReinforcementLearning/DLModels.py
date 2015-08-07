@@ -153,6 +153,23 @@ class DeepAutoencoder(Transformer):
         updates = [(param, param - learning_rate*grad) for param, grad in zip(self.theta, T.grad(self.cost,wrt=self.theta))]
         return self.make_func(x=x,y=y,batch_size=batch_size,output=None, updates=updates, transformed_x=transformed_x)
 
+    def indexed_train_func(self, arc, learning_rate, x, batch_size, transformed_x):
+
+        nnlayer = self.layers[arc]
+        # clone is used to substitute a computational subgraph
+        transformed_cost = theano.clone(self.cost, replace={self._x : transformed_x(self._x)})
+
+        # find out what happens in this updates list
+        updates = [
+            (nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx], - learning_rate * T.grad(transformed_cost, nnlayer.W)[:,nnlayer.idx].T)),
+            (nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx], - learning_rate * T.grad(transformed_cost,nnlayer.b)[nnlayer.idx])),
+            (nnlayer.b_prime, - learning_rate * T.grad(transformed_cost, nnlayer.b_prime))
+        ]
+
+        idx = T.iscalar('idx')
+        givens = {self._x: x[idx * batch_size:(idx+1) * batch_size]}
+        return theano.function([idx,nnlayer.idx], None, updates=updates, givens=givens)
+
     def validate_func(self, _, x, y, batch_size, transformed_x=identity):
         return self.make_func(x=x,y=y,batch_size=batch_size,output=self.validation_error, update=None, transformed_x=transformed_x)
 
@@ -309,7 +326,28 @@ class MergeIncrementingAutoencoder(Transformer):
         m_dists, _ = theano.map(lambda v: T.sqrt(T.dot(v, v.T)), m)
         # dimshuffle(0,'x') is converting N -> Nx1
         m_cosine = (T.dot(m, m.T)/m_dists) / m_dists.dimshuffle(0,'x')
+
+        # T.tri gives a matrix with 1 below diagonal (including diag) and zero elsewhere
+        # flatten() gives a view of tensor nDim-1 as the original and last dim having all the data in original
+        # finfo gives the maximum value of floats
         m_ranks = T.argsort((m_cosine - T.tri(m.shape[0]) * np.finfo(theano.config.floatX).max).flatten())[(m.shape[0] * (m.shape[0]+1)) // 2:]
+
+        score_merges = theano.function([m], m_ranks)
+
+        # greedy layer-wise training
+        layer_greedy = [ae.indexed_train_func(0, learning_rate, x, batch_size, lambda  x, j=i: chained_output(self.layers[:j], x)) for i, ae in enumerate(self._layered_autoencoders)]
+        finetune = self._autoencoder.train_func(0, learning_rate, x, y, batch_size)
+        combined_objective_tune = self._combined_objective.train_func(0, learning_rate, x, y, batch_size)
+
+        # set up cost function
+        mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
+        mi_updates = []
+
+        # increment a subtensor by a certain value
+        for i, nnlayer in enumerate(self._autoencoder.layers):
+            if i == 0:
+                mi_updates += [(nnlayer.W, T.inc_subtensor(nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx], - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)))]
+
 
 class CombinedObjective(Transformer):
 

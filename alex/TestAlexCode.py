@@ -3,6 +3,8 @@ __author__ = 'Thushan Ganegedara'
 from enum import IntEnum
 import itertools
 from collections import defaultdict
+import numpy as np
+from theano import config
 
 class DiscreteRL(object):
     ''' Q learning model '''
@@ -41,4 +43,5 @@ if __name__ == '__main__':
     data = defaultdict(list)
     d = data['Joe']
     x = 25 // 2
+    val = np.finfo(config.floatX)
     print ""
