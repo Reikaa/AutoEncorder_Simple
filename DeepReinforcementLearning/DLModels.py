@@ -343,10 +343,133 @@ class MergeIncrementingAutoencoder(Transformer):
         mi_cost = self._softmax.cost + self.lam * self._autoencoder.cost
         mi_updates = []
 
+        # calculating merge_inc updates
         # increment a subtensor by a certain value
         for i, nnlayer in enumerate(self._autoencoder.layers):
             if i == 0:
                 mi_updates += [(nnlayer.W, T.inc_subtensor(nnlayer.W, T.inc_subtensor(nnlayer.W[:,nnlayer.idx], - learning_rate * T.grad(mi_cost, nnlayer.W)[:,nnlayer.idx].T)))]
+                mi_updates += [(nnlayer.b, T.inc_subtensor(nnlayer.b[nnlayer.idx], - learning_rate*T.grad(mi_cost,nnlayer.b)[nnlayer.idx]))]
+            else:
+                mi_updates += [(nnlayer.W, nnlayer.W - learning_rate * T.grad(mi_cost, nnlayer.W))]
+                mi_updates += [(nnlayer.b, nnlayer.b - learning_rate * T.grad(mi_cost,nnlayer.b))]
+
+            mi_updates += [(nnlayer.b_prime, -learning_rate * T.grad(mi_cost,nnlayer.b_prime))]
+
+        softmax_theta = [self.layers[-1].W, self.layers[-1].b]
+
+        mi_updates += [(param, param - learning_rate * grad) for param,grad in zip(softmax_theta, T.grad(mi_cost,softmax_theta))]
+
+        idx = T.iscalar('idx')
+
+        given = {
+            self._x : x[idx*batch_size : (idx+1) * batch_size],
+            self._y : y[idx*batch_size : (idx+1) * batch_size]
+        }
+
+        mi_train = theano.function([idx, self.layers[0].idx], None, updates=mi_updates, givens=given)
+
+        def merge_model(pool_indexes, merge_percentage, inc_percentage):
+            '''
+            Merge/Increment the batch using given pool of data
+            :param pool_indexes:
+            :param merge_percentage:
+            :param inc_percentage:
+            :return:
+            '''
+
+            prev_map = {}
+            prev_dimensions = self.layers[0].initial_size[0]
+
+            used = set()
+            empty_slots = []
+
+            # first layer
+            layer_weights = self.layers[0].W.get_value().T.copy()
+            layer_bias = self.layers[0].b.get_value().copy()
+
+            # initialization of weights
+            init = 4 * np.sqrt(6.0 / (sum(layer_weights.shape())))
+
+            # number of nodes to merge or increment
+            merge_count = int(merge_percentage * layer_weights.shape[0])
+            inc_count = int(inc_percentage * layer_weights.shape[0])
+
+            # if there's nothing to merge or increment
+            if merge_count == 0 and inc_count == 0:
+                return
+
+            # get the highest ranked node indexes
+            for index in score_merges(layer_weights):
+                if len(empty_slots) == merge_count:
+                    break
+
+                # x and y coordinates created out of index (assume these are the two nodes
+                # to merge)
+                x_i, y_i = index % layer_weights.shape[0], index // layer_weights.shape[0]
+
+                # if x_i and y_i are not in "used"`  list
+                if x_i not in used and y_i not in used:
+                    # update weights and bias with avg
+                    layer_weights[x_i] = (layer_weights[x_i] + layer_weights[y_i])/2
+                    layer_bias[x_i] = (layer_bias[x_i] + layer_bias[y_i])/2
+
+                    #add it to the used list
+                    used.update([x_i,y_i])
+                    empty_slots.append(y_i)
+
+            #get the new size of layer
+            new_size = layer_weights.shape[0] + inc_count - len(empty_slots)
+            current_size = layer_weights.shape[0]
+
+            # if new size is less than current...
+            if new_size < current_size:
+                non_empty_slots = sorted(list(set(range(0,current_size)) - set(empty_slots)), reverse=True)[:len(empty_slots)]
+                prev_map = dict(zip(empty_slots, non_empty_slots))
+
+                for dest, src in prev_map.items():
+                    layer_weights[dest] = layer_weights[src]
+                    layer_weights[src] = np.asarray(self.rng.uniform(low=init, high=init, size=layer_weights.shape[1]), dtype=theano.config.floatX)
+
+                empty_slots = []
+
+            else:
+                prev_map = {}
+
+            new_layer_weights = np.zeros((new_size,prev_dimensions), dtype = theano.config.floatX)
+            new_layer_weights[:layer_weights.shape[0], :layer_weights.shape[1]] = layer_weights[:new_layer_weights.shape[0], :new_layer_weights.shape[1]]
+
+            empty_slots = [slot for slot in empty_slots if slot < new_size] + list(range(layer_weights.shape[0],new_size))
+            new_layer_weights[empty_slots] = np.asarray(self.rng.uniform(low=-init, high=init, size=(len(empty_slots), prev_dimensions)), dtype=theano.config.floatX)
+
+            layer_bias.resize(new_size)
+
+            layer_bias_prime = self.layers[0].b_prime.get_value().copy()
+            layer_bias_prime.resize(prev_dimensions)
+
+            prev_dimensions = new_layer_weights.shape[0]
+
+            self.layers[0].W.set_value(new_layer_weights.T)
+            self.layers[0].b.set_value(layer_bias)
+            self.layers[0].b_prime.set_value(layer_bias_prime)
+
+            if empty_slots:
+
+                for _ in range(self.iterations):
+                    for i in pool_indexes:
+                        layer_greedy[0](i, empty_slots)
+
+            last_layer_weights = self.layers[1].W.get_value().copy()
+
+            for dest, src in prev_map.items():
+                last_layer_weights[dest] = last_layer_weights[src]
+                last_layer_weights[src] = np.zeros(last_layer_weights.shape[1])
+
+            last_layer_weights.resize((prev_dimensions, self.layers[1].initial_size[1]))
+            last_layer_prime = self.layers[1].b_prime.get_value().copy()
+            last_layer_prime.resize(prev_dimensions)
+
+            self.layers[1].W.set_value(last_layer_weights)
+            self.layers[1].b_prime.set_value(last_layer_prime)
 
 
 class CombinedObjective(Transformer):
