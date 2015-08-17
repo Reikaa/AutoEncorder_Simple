@@ -6,7 +6,6 @@ import struct
 import random
 import math
 import numpy as np
-import sys
 
 from collections import defaultdict
 
@@ -16,7 +15,6 @@ def distribute_as(dist, n):
     for _ in range(n):
         x = random.random()
         found = False
-        #enumerate gives tuples with sequence number and sequence item
         for i, y in enumerate(cumsum):
             if x < y:
                 yield i
@@ -36,6 +34,8 @@ def main():
     parser.add_argument('elements', type=int, help='How much data to generate')
     parser.add_argument('effect', type=str, help='What filter to apply')
     parser.add_argument('seed', type=int, default=None, help='Seed')
+    parser.add_argument('--header', action='store_true', dest='header', help='Make a header')
+    parser.add_argument('--even', action='store_true', dest='even', help='even')
 
     args = parser.parse_args()
 
@@ -51,8 +51,6 @@ def main():
     with open(args.pickle_file, 'rb') as f:
         train, _, _ = pickle.load(f, encoding='latin1')
 
-    #defaultdict takes a function (factory) as input and returns default object if a key doesn't exist
-    #so in this case it returns an empty list for non-existing keys
     data = defaultdict(list)
     train_x, train_y = train
 
@@ -77,10 +75,19 @@ def main():
     f_prior = f_prior ** math.ceil(math.sqrt(len(data)))
     f_prior /= np.sum(f_prior, axis=1).reshape(-1, 1)
 
+    if args.header:
+        meta = { 'input_dimension': 28 * 28, 'column': 'mnist_1', 'column_id': 0, 'start': 0, 'gap': 3600, 'labels': 10 }
+        import json
+        blob = json.dumps(meta).encode('utf-8')
+        sys.stdout.buffer.write(struct.pack('<I', len(blob)))
+        sys.stdout.buffer.write(blob)
+
     for i, dist in enumerate(f_prior):
         if not args.silent:
-            print '>>', i, '/', f_prior.shape[0], dist #, file= sys.stderr
+            print('>>', i, '/', f_prior.shape[0], dist, file=sys.stderr)
         # generate a data of args.granularity with the specified distribution
+        if args.even:
+            dist = np.array([ 1 / len(dist) for _ in dist])
         for label in distribute_as(dist, args.granularity):
             example = random.choice(data[label])
             if args.effect == 'noise':

@@ -11,14 +11,11 @@
 
 # pretrain everything
 
-data_sets = [ (784, 10, 'mnist'), (3072, 10, 'cifar-10'), (3072, 100, 'cifar-100') ]
-arches = [ '500', '500 500', '500 500 500' ]
-seeds = list(range(0, 5))
+data_sets = [ (784, 10, 'mnist') ]
+arches = [ '500' ]
+seeds = [0]
 models = [
     'adapting --policy ContinuousState',
-    'adapting --policy DiscreteRL',
-    'adapting --policy Pooler',
-    'combined'
 ]
 
 path_config = 'PATH=/usr/local/cuda-6.5/bin:$PATH '
@@ -34,5 +31,5 @@ for input_layer_size, classes, data_set in data_sets:
                 data_stream = ' '.join(['./generate_distribution.py', '-q', 'data/' + data_set + '.pkl', '1000', '1000000', effect, str(seed) ])
                 train = ' | ' + path_config + ld_config  + './train.py -b 1000 -m ' + model + ' -al ' + str(input_layer_size) + ' '  + arch + ' ' + str(classes)  + ' -o ' + base_name
 
-                #print('if [ ! -f "output/' + base_name + '/layers/0.npz" ]; then ' + data_stream + train + ' &> logs/' + base_name + '; fi')
-                print('if [ ! -f "output/' + base_name + '/validation.csv" ]; then echo ' + base_name + '; fi')
+                print('if [ ! -f "output/' + base_name + '/layers/0.npz" ]; then ' + data_stream + train + ' &> logs/' + base_name + '; fi')
+                #print('if [ ! -f "output/' + base_name + '/layers/0.npz" ]; then echo ' + base_name + '; fi')

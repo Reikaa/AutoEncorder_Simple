@@ -14,7 +14,6 @@ def identity(x):
     ''' Identity function '''
     return x
 
-#reduce function perform chained operations
 def chained_output(layers, x):
     ''' Fold the output function across all layers '''
     return functools.reduce(lambda acc, layer: layer.output(acc), layers, x)
@@ -73,7 +72,7 @@ class Transformer(object):
 class DeepAutoencoder(Transformer):
     ''' Generalised deep autoencoder '''
     def __init__(self, layers, corruption_level, rng):
-        super.__init__(layers, 1, False)
+        super().__init__(layers, 1, False)
         self._rng = rng
         self._corruption_level = corruption_level
 
@@ -114,7 +113,7 @@ class DeepAutoencoder(Transformer):
             x = T.nnet.sigmoid(T.dot(x, W.T) + b_prime)
 
         # cost function
-        self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._x), axis=1) #+ 0.5 * regulariser
+        self.cost_vector = T.sum(T.nnet.binary_crossentropy(x, self._x), axis=1) + 0.5 * regulariser
         self.theta = [ param for layer in self.layers for param in [ layer.W, layer.b, layer.b_prime ] ]
         self.cost = T.mean(self.cost_vector)
 
@@ -149,7 +148,7 @@ class DeepAutoencoder(Transformer):
 class StackedAutoencoder(Transformer):
     ''' Train autoencoders layerwise by training each one in it's own arc '''
     def __init__(self, layers, corruption_level, rng):
-        super.__init__(layers, len(layers), False)
+        super().__init__(layers, len(layers), False)
         self._autoencoders = [ DeepAutoencoder([layer], corruption_level, rng) for layer in layers ]
 
     def process(self, x, y):
@@ -169,7 +168,7 @@ class Softmax(Transformer):
     ''' Treat all visited layers as MLP, with the last layer being a softmax '''
 
     def __init__(self, layers, iterations):
-        super.__init__(layers, 1, True)
+        super().__init__(layers, 1, True)
 
         self.theta = None
         self._errors = None
@@ -277,7 +276,7 @@ class MergeIncrementingAutoencoder(Transformer):
     __slots__ = ['_autoencoder', '_layered_autoencoders', '_combined_objective', '_softmax', 'lam', '_updates', '_givens', 'rng', 'iterations']
 
     def __init__(self, layers, corruption_level, rng, lam, iterations):
-        super.__init__(layers, 1, False)
+        super().__init__(layers, 1, False)
 
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._layered_autoencoders = [ DeepAutoencoder([ self.layers[i] ], corruption_level, rng) for i, layer in enumerate(self.layers[:-1]) ]
@@ -406,11 +405,11 @@ class MergeIncrementingAutoencoder(Transformer):
             self.layers[0].b.set_value(layer_bias)
             self.layers[0].b_prime.set_value(layer_bias_prime)
 
-            if empty_slots:
-                # train this layer
-                for _ in range(self.iterations):
-                    for i in pool_indexes:
-                        layer_greedy[0](i, empty_slots)
+            #if empty_slots:
+                ## train this layer
+                #for _ in range(self.iterations):
+                    #for i in pool_indexes:
+                        #layer_greedy[0](i, empty_slots)
 
             # update the last layer's weight matrix size
             last_layer_weights = self.layers[1].W.get_value().copy()
@@ -447,7 +446,7 @@ class MergeIncrementingAutoencoder(Transformer):
 class CombinedObjective(Transformer):
     ''' Combined objective trainer '''
     def __init__(self, layers, corruption_level, rng, lam, iterations):
-        super.__init__(layers, 1, True)
+        super().__init__(layers, 1, True)
 
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._softmax = Softmax(layers, 1)
@@ -490,7 +489,7 @@ class AdaptingCombinedObjective(Transformer):
     ''' An autoencoder that has an interchangable controller that adjusts the architecture of the neural network'''
 
     def __init__(self, layers, corruption_level, rng, iterations, lam, mi_batch_size, pool_size, controller):
-        super.__init__(layers, 1, True)
+        super().__init__(layers, 1, True)
 
         self._mi_batch_size = mi_batch_size
         self._controller = controller

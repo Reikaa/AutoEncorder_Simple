@@ -12,9 +12,6 @@ data_dirs = do () ->
         #if not /Selective/.test(x) and not /combined/.test(x)
             #continue
 
-        if (not /cifar-100/.test(x)) and (not /mnist/.test(x)) and (not /cifar-10/.test(x))
-            continue
-
         if /NoPolicy/.test(x)
             continue
 
@@ -24,10 +21,7 @@ data_dirs = do () ->
         if /HardPooler/.test(x)
             continue
 
-        if /adapting$/.test(x)
-            continue
-
-        if not /cifar-10/.test(x)
+        if not /mnist/.test(x)
             continue
 
         console.log(x)
@@ -52,14 +46,14 @@ create_dir = (dir) ->
 
 # build the chart
 build_chart = (data, charter, params) ->
-    width = 1000
+    width = 800
     height = 600
 
     svg = d3.select('body')
         .append('svg')
         .attr('xmlns', 'http://www.w3.org/2000/svg')
-        .attr('width', width)
-        .attr('height', height)
+        .attr('width', 800)
+        .attr('height', 600)
 
     # run the charter
     charter data, width, height, svg, params
@@ -199,7 +193,7 @@ line_chart = (data, width, height, svg, params) ->
         'top': 20
         'bottom': 70
         'right': 140
-        'left': 90
+        'left': 70
 
     [ width, height, chart ] = create_margin margin, width, height, svg
 
@@ -209,7 +203,7 @@ line_chart = (data, width, height, svg, params) ->
         .attr('type','text/css')
 
     css_text = '<![CDATA[
-                    text { font: 20px sans-serif; }
+                    text { font: 12px sans-serif; }
                     .line { fill: none; stroke-width: 1; }
                     .axis path, .axis line { fill: none; stroke: black; shape-rendering: crispEdges; }
                 ]]>'
@@ -239,7 +233,7 @@ line_chart = (data, width, height, svg, params) ->
     rects.enter()
         .append('rect')
 
-    rects.attr('y', (d, i) -> (i * 2) + 'em')
+    rects.attr('y', (d, i) -> (i * 1.2) + 'em')
         .attr('width', (d) -> if d.type is 'circle' then 4 else 10)
         .attr('height', (d) -> if d.type is 'circle' then 4 else 2)
         .style('fill', (d) -> colour(d.name))
@@ -359,49 +353,48 @@ neurons_recon = (set) ->
 
 model_name_mapper = (name) ->
     switch name
-        when 'adapting--policyContinuousState' then 'ContRL'
-        when 'adapting--policyDiscreteRL' then 'DiscreteRL'
-        when 'adapting--policyMDAE' then 'MDAE'
-        when 'adapting--policyPooler' then 'Pool-10000'
         when 'combined' then 'Standard'
+        when 'adapting--policyPooler' then 'Pool-10000'
+        when 'adapting--policyMDAE' then 'MDAE'
+        when 'adapting--policyDiscreteRL' then 'DiscreteRL'
+        when 'adapting--policyContinuousState' then 'ContRL'
         else name
 
 # average error and time - data_set + effect averaged over all seeds
-group_error_time = (data_set_func, average_func, err_dir_name, time_dir_name, y_err_label, y_time_label) ->
+group_error_time = (data_set_func, err_dir_name, time_dir_name, y_err_label, y_time_label) ->
     create_dir err_dir_name
     create_dir time_dir_name
 
     for effective_data_set, v1 of (_.groupBy data_dirs, data_set_func)
         # group by marginalisation
-        params =
-            'x_label': 'Position of the data stream'
-            'y_label': y_err_label
-            'y_format': (axis) -> axis.ticks(10, '%')
-            'y_min': 0
-            'y_max': 1
+        for marginalised, v2 of (_.groupBy v1, 'marginalised')
+            for arch, v3 of (_.groupBy v2, 'arch')
+                params =
+                    'x_label': 'Position of the data stream'
+                    'y_label': y_err_label
+                    'y_format': (axis) -> axis.ticks(10, '%')
+                    'y_min': 0
+                    'y_max': 1
 
-        error_data = ({ 'name': model_name_mapper(thing), 'values': validation_average v2 } for thing, v2 of (_.groupBy v1, average_func))
-        error_data = _.sortBy(error_data, (x) -> parseInt(x.name.split('=')[1], 10))
+                error_data = ({ 'name': model_name_mapper(model), 'values': validation_average v4 } for model, v4 of (_.groupBy v3, 'model'))
+                error_data = _.sortBy(error_data, (x) -> parseInt(x.name.split('=')[1], 10))
 
-        svg = build_chart error_data, line_chart, params
-        fs.writeFileSync (err_dir_name + '/' + effective_data_set + '.svg'), svg
+                svg = build_chart error_data, line_chart, params
+                fs.writeFileSync (err_dir_name + '/' + [ effective_data_set, marginalised, arch ].join('_') + '.svg'), svg
 
-        #params =
-            #'x_label': 'Position of the data stream'
-            #'y_label': y_time_label
+                params =
+                    'x_label': 'Position of the data stream'
+                    'y_label': y_time_label
 
-        #time_data = ({ 'name': model_name_mapper(thing), 'values': time_average v2 } for thing, v2 of (_.groupBy v1, average_func))
-        #svg = build_chart time_data, line_chart, params
-        #fs.writeFileSync (time_dir_name + '/' + effective_data_set + '.svg'), svg
+                time_data = ({ 'name': model_name_mapper(model), 'values': time_average v4 } for model, v4 of (_.groupBy v3, 'model'))
+                svg = build_chart time_data, line_chart, params
+                fs.writeFileSync (time_dir_name + '/' + [ effective_data_set, marginalised, arch ].join('_') + '.svg'), svg
 
 # average over seed
-group_error_time ((x) -> x.data_set + '_' + x.effect + '_' + x.arch), ((x) -> x.model), 'average_err', 'average_time', 'Average error over all variations', 'Average time over all variations (s)'
+group_error_time ((x) -> x.data_set + '_' + x.effect), 'average_err', 'average_time', 'Average error over all variations', 'Average time over all variations (s)'
 
 # individual
-group_error_time ((x) -> x.data_set + '_' + x.effect + '_' + x.seed + '_' + x.arch), ((x) -> x.model), 'individual_err', 'individual_time', 'Error', 'Time (s)'
-
-# data set
-group_error_time ((x) -> x.data_set), ((x) -> x.model + '_' + x.arch), 'data_set_err', 'data_set_time', 'Error', 'Time (s)'
+group_error_time ((x) -> x.data_set + '_' + x.effect + '_' + x.seed), 'individual_err', 'individual_time', 'Error', 'Time (s)'
 
 # build annotated
 do () ->

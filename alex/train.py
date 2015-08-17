@@ -289,7 +289,8 @@ def main():
         except StopIteration:
             pass
 
-    logger.info('validation average: %f', sum(v[-1] for v in validation_runs) / len(validation_runs))
+    if validation_runs:
+        logger.info('validation average: %f', sum(v[-1] for v in validation_runs) / len(validation_runs))
     model_logs = nnet_model.end()
 
     # output layer weights

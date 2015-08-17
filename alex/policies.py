@@ -31,7 +31,6 @@ class DiscreteRL(Controller):
         error_plus  = 1
         error_minus = 2
 
-        #getting a string instead of int
         def __str__(self):
             if self.value == DiscreteRL.State.error_plus:
                 return '/'
@@ -56,7 +55,6 @@ class DiscreteRL(Controller):
         # initalise Q value map
         self.q = defaultdict(float)
 
-        #getting all possible states
         self.states = [ s for s in itertools.product(*([list(self.State)] * self.history)) ]
         self.actions = list(self.Action)
 
@@ -74,14 +72,12 @@ class DiscreteRL(Controller):
             self.action_log.append(str(self.Action.pool))
             return
 
-        #get current state looking at data
         state = ( self.State.error_plus if data['mea_30'][-2] < data['mea_30'][-1] else self.State.error_minus,
                   self.State.error_plus if data['mea_15'][-2] < data['mea_15'][-1] else self.State.error_minus,
                   self.State.error_plus if data['mea_5'][-2]  < data['mea_5'][-1]  else self.State.error_minus )
         print('state', state)
 
         # check the reward
-        # if there is a previous state (!= None)
         if self.prev_state:
             # process the s, a, s', r tuple
             reward = - data['errors']
@@ -256,7 +252,7 @@ class ContinuousState(Controller):
             # penalise increment
             neuron_penalty = 0
             if data['neuron_balance'] > 2 or data['neuron_balance'] < 1:
-                neuron_penalty = 1.5 * abs(1 - data['neuron_balance'])
+                neuron_penalty = 2 * abs(1 - data['neuron_balance'])
 
             reward -= neuron_penalty
 

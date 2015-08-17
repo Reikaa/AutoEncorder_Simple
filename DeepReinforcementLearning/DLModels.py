@@ -471,6 +471,20 @@ class MergeIncrementingAutoencoder(Transformer):
             self.layers[1].W.set_value(last_layer_weights)
             self.layers[1].b_prime.set_value(last_layer_prime)
 
+            for _ in range(self.iterations):
+                for i in pool_indexes:
+                    finetune(i)
+
+            if empty_slots:
+                for _ in range(self.iterations):
+                    for i in pool_indexes:
+                        mi_train(i, empty_slots)
+            else:
+                for i in pool_indexes:
+                    combined_objective_tune(i)
+
+        return merge_model
+
 
 class CombinedObjective(Transformer):
 
@@ -522,4 +536,62 @@ class DeepReinforcementLearningModel(Transformer):
         self._controller = controller
         self._autoencoder = DeepAutoencoder(layers[:-1], corruption_level, rng)
         self._softmax = CombinedObjective(layers, corruption_level, rng, lam, iterations)
-        self._merge_inc =
+        self._merge_increment = MergeIncrementingAutoencoder(layers, corruption_level, rng, lam, iterations)
+
+        self._pool = Pool(layers[0].initial_size[0], pool_size)
+        self._hard_pool = Pool(layers[0].initial_size[0], pool_size)
+
+    def process(self, x, y):
+        self._autoencoder.process(x, y)
+        self._softmax.process(x, y)
+        self._merge_increment.process(x, y)
+
+    def train_func(self, arc, learning_rate, x, y, batch_size, apply_x=identity):
+        batch_pool = Pool(self.layers[0].initial_size[0], batch_size)
+
+        train_func = self._softmax.train_func(arc, learning_rate, x, y, batch_size, apply_x)
+        reconstruction_func = self._autoencoder.validate_func(arc, x, y, batch_size, apply_x)
+        error_func = self.error_func(arc, x, y, batch_size, apply_x)
+
+        merge_inc_func_batch = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, x, y)
+        merge_inc_func_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._pool.data, self._pool.data_y)
+        merge_inc_func_hard_pool = self._merge_increment.merge_inc_func(learning_rate, self._mi_batch_size, self._hard_pool.data, self._hard_pool.data_y)
+
+        hard_examples_func = self._autoencoder.get_hard_examples(arc, x, y, batch_size, apply_x)
+
+        train_func_pool = self._softmax.train_func(arc, learning_rate, self._pool.data, self._pool.data_y, batch_size, apply_x)
+        train_func_hard_pool = self._softmax.train_func(arc, learning_rate, self._hard_pool.data, self._hard_pool.data_y, batch_size, apply_x)
+
+        neuron_balance = 1
+
+        def train_pool(pool, pool_func, amount):
+
+            for i in pool.as_size(int(pool.size * amount), batch_size):
+                pool_func(i)
+
+        def moving_average(log, n):
+
+            weights = np.exp(np.linspace(-1, 0, n))
+            weights /= sum(weights)
+            return np.convolve(log, weights)[n-1:-n+1]
+
+        def pool_relevant(pool):
+
+            def magnitude(x):
+                '''  returns sqrt(sum(v(i)^2)) '''
+                return sum((v **2 for v in x.values() )) ** 0.5
+
+            def compare(x,y):
+                '''  Calculate Cosine distance between x and y '''
+                top = 0
+
+                for k in set(x) | set(y):
+                    xval, yval = x[k] if k in x else 0, y[k] if k in y else 0
+                    top += xval * yval
+
+                return top / magnitude(x) * magnitude(y)
+
+            # score over batches for this pool
+            batches_covered = pool.size // batch_size
+            batch_scores = [(i % batches_covered, compare(current, self.context['distribution'][i])) for i in range(-1,-1 - batches_covered)]
+            mean = np.mean([ v[1] for v in batch_scores ])
